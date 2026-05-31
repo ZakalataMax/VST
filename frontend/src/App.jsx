@@ -42,7 +42,6 @@ export default function App() {
         sx={{
           py: 2,
           flex: 1,
-          minHeight: 0,
           display: "flex",
           flexDirection: "column",
         }}
@@ -58,7 +57,7 @@ export default function App() {
           <Tab label="Logs" />
         </Tabs>
 
-        <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <Box sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {activeTab === 0 ? <ParsingToolsPage /> : <LogsPage />}
         </Box>
       </Container>

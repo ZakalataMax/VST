@@ -33,6 +33,12 @@ const placeholderSx = {
   },
 };
 
+const multilineFieldSx = {
+  ...placeholderSx,
+  '& .MuiInputBase-root': { pr: 6, alignItems: 'flex-start', overflow: 'hidden' },
+  '& .MuiInputBase-inputMultiline': { overflow: 'auto !important' },
+};
+
 const fieldActionSx = {
   position: 'absolute',
   top: 8,
@@ -183,29 +189,25 @@ export default function ParsingToolsPage() {
   return (
     <Grid container spacing={2.5} alignItems="stretch">
       <Grid size={{ xs: 12, lg: 6 }} sx={{ display: 'flex' }}>
-        <Card variant="outlined" sx={{ flex: 1, height: '100%' }}>
-          <CardContent sx={{ height: '100%', display: 'flex' }}>
-            <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
+        <Card variant="outlined" sx={{ flex: 1, width: '100%' }}>
+          <CardContent>
+            <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <Typography variant="h6" noWrap sx={{ minWidth: 0, flex: 1 }}>
                   Number Formatter
                 </Typography>
                 <Chip label={`${formatterLinesCount} lines`} size="small" sx={{ ml: 'auto', flexShrink: 0 }} />
               </Stack>
-              <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+              <Box sx={{ position: 'relative' }}>
                 <TextField
                   multiline
                   minRows={9}
+                  maxRows={13}
                   fullWidth
                   value={formatterInput}
                   onChange={event => setFormatterInput(event.target.value)}
                   placeholder={'123\n456\n789'}
-                  sx={{
-                    ...placeholderSx,
-                    height: '100%',
-                    '& .MuiInputBase-root': { pr: 6, height: '100%', alignItems: 'flex-start' },
-                    '& .MuiInputBase-inputMultiline': { height: '100% !important', overflow: 'auto !important' },
-                  }}
+                  sx={multilineFieldSx}
                 />
                 <Tooltip title="Paste">
                   <IconButton size="small" sx={fieldActionSx} onClick={() => handlePaste('formatter')}>
@@ -281,20 +283,16 @@ export default function ParsingToolsPage() {
                   <ToggleButton value="quoted">With quotes</ToggleButton>
                 </ToggleButtonGroup>
               </Stack>
-              <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+              <Box sx={{ position: 'relative' }}>
                 <TextField
                   multiline
                   minRows={6}
+                  maxRows={13}
                   fullWidth
                   value={formatterOutput}
                   slotProps={{ input: { readOnly: true } }}
                   placeholder={formatterPlaceholder}
-                  sx={{
-                    ...placeholderSx,
-                    height: '100%',
-                    '& .MuiInputBase-root': { pr: 6, height: '100%', alignItems: 'flex-start' },
-                    '& .MuiInputBase-inputMultiline': { height: '100% !important', overflow: 'auto !important' },
-                  }}
+                  sx={multilineFieldSx}
                 />
                 <Tooltip title="Copy">
                   <span>
@@ -315,29 +313,25 @@ export default function ParsingToolsPage() {
       </Grid>
 
       <Grid size={{ xs: 12, lg: 6 }} sx={{ display: 'flex' }}>
-        <Card variant="outlined" sx={{ flex: 1, height: '100%' }}>
-          <CardContent sx={{ height: '100%', display: 'flex' }}>
-            <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
+        <Card variant="outlined" sx={{ flex: 1, width: '100%' }}>
+          <CardContent>
+            <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <Typography variant="h6" noWrap sx={{ minWidth: 0, flex: 1 }}>
                   Duplicate Checker
                 </Typography>
                 <Chip label={`${duplicatesLinesCount} lines`} size="small" sx={{ ml: 'auto', flexShrink: 0 }} />
               </Stack>
-              <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+              <Box sx={{ position: 'relative' }}>
                 <TextField
                   multiline
                   minRows={9}
+                  maxRows={13}
                   fullWidth
                   value={duplicatesInput}
                   onChange={event => setDuplicatesInput(event.target.value)}
                   placeholder={'Example input:\n101021\n830732\n101021\n102988'}
-                  sx={{
-                    ...placeholderSx,
-                    height: '100%',
-                    '& .MuiInputBase-root': { pr: 6, height: '100%', alignItems: 'flex-start' },
-                    '& .MuiInputBase-inputMultiline': { height: '100% !important', overflow: 'auto !important' },
-                  }}
+                  sx={multilineFieldSx}
                 />
                 <Tooltip title="Paste">
                   <IconButton size="small" sx={fieldActionSx} onClick={() => handlePaste('duplicates')}>
@@ -359,20 +353,16 @@ export default function ParsingToolsPage() {
                   </span>
                 </Tooltip>
               </Box>
-              <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+              <Box sx={{ position: 'relative' }}>
                 <TextField
                   multiline
                   minRows={6}
+                  maxRows={13}
                   fullWidth
                   value={duplicatesOutput}
                   slotProps={{ input: { readOnly: true } }}
                   placeholder={'Example output:\nTotal numbers: 4\nUnique numbers: 3\nDuplicates found: 1\n\nDuplicate values: 101021 (x2)'}
-                  sx={{
-                    ...placeholderSx,
-                    height: '100%',
-                    '& .MuiInputBase-root': { pr: 6, height: '100%', alignItems: 'flex-start' },
-                    '& .MuiInputBase-inputMultiline': { height: '100% !important', overflow: 'auto !important' },
-                  }}
+                  sx={multilineFieldSx}
                 />
                 <Tooltip title="Copy">
                   <span>
@@ -406,14 +396,12 @@ export default function ParsingToolsPage() {
                 <TextField
                   multiline
                   minRows={6}
+                  maxRows={6}
                   fullWidth
                   value={splitterInput}
                   onChange={event => setSplitterInput(event.target.value)}
                   placeholder={'Paste one value per line'}
-                  sx={{
-                    ...placeholderSx,
-                    '& .MuiInputBase-root': { pr: 6, alignItems: 'flex-start' },
-                  }}
+                  sx={multilineFieldSx}
                 />
                 <Tooltip title="Paste">
                   <IconButton size="small" sx={fieldActionSx} onClick={() => handlePaste('splitter')}>
@@ -463,13 +451,11 @@ export default function ParsingToolsPage() {
                         <TextField
                           multiline
                           minRows={3}
+                          maxRows={6}
                           fullWidth
                           value={block.text}
                           slotProps={{ input: { readOnly: true } }}
-                          sx={{
-                            ...placeholderSx,
-                            '& .MuiInputBase-root': { pr: 6, alignItems: 'flex-start' },
-                          }}
+                          sx={multilineFieldSx}
                         />
                         <Tooltip title="Copy block">
                           <span>

@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { CssBaseline, ThemeProvider, createTheme } from "@mui/material";
 import App from "./App";
+import { globalScrollbarStyles } from "./theme/scrollStyles";
 
 const theme = createTheme({
   palette: {
@@ -22,6 +23,11 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: "Inter, Segoe UI, Roboto, Arial, sans-serif",
+  },
+  components: {
+    MuiCssBaseline: {
+      styleOverrides: globalScrollbarStyles,
+    },
   },
 });
 
