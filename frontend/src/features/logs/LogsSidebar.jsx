@@ -15,7 +15,7 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import { fetchLogDays, fetchLogFiles } from "./api";
-import { fetchDbDays } from "../report/api";
+import { fetchCsvDays } from "../report/api";
 import { buildCoverageDays } from "./logUtils";
 import { scrollSx } from "../../theme/scrollStyles";
 
@@ -26,14 +26,14 @@ function DayGroup({ day, selected, onSelectDay }) {
   const theme = useTheme();
   const accent = day.complete
     ? theme.palette.success.main
-    : day.dbDay
+    : day.csvDay
       ? theme.palette.warning.main
       : day.logDay?.acs1 && day.logDay?.acs2
         ? theme.palette.info.main
         : theme.palette.text.disabled;
 
-  const minTime = day.dbDay?.minDateTime?.length >= 19 ? day.dbDay.minDateTime.slice(11, 19) : null;
-  const maxTime = day.dbDay?.maxDateTime?.length >= 19 ? day.dbDay.maxDateTime.slice(11, 19) : null;
+  const minTime = day.csvDay?.minDateTime?.length >= 19 ? day.csvDay.minDateTime.slice(11, 19) : null;
+  const maxTime = day.csvDay?.maxDateTime?.length >= 19 ? day.csvDay.maxDateTime.slice(11, 19) : null;
 
   return (
     <Box
@@ -53,7 +53,7 @@ function DayGroup({ day, selected, onSelectDay }) {
         flexWrap="wrap"
         useFlexGap
         onClick={() => onSelectDay(day.date)}
-        sx={{ mb: day.dbDay ? 0.5 : 0, cursor: "pointer" }}
+        sx={{ mb: day.csvDay ? 0.5 : 0, cursor: "pointer" }}
       >
         <Typography variant="caption" sx={{ fontWeight: 700, fontSize: 12 }}>
           {day.date}
@@ -61,15 +61,15 @@ function DayGroup({ day, selected, onSelectDay }) {
         <Chip
           label={day.statusLabel}
           size="small"
-          color={day.complete ? "success" : day.dbDay ? "warning" : "default"}
+          color={day.complete ? "success" : day.csvDay ? "warning" : "default"}
           variant="outlined"
           sx={{ height: 20, fontSize: 10, fontWeight: 600 }}
         />
       </Stack>
 
-      {day.dbDay ? (
+      {day.csvDay ? (
         <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-          {day.dbDay.rowCount.toLocaleString()} rows
+          {day.csvDay.rowCount.toLocaleString()} rows
           {minTime && maxTime ? ` · ${minTime}–${maxTime}` : ""}
         </Typography>
       ) : !(day.logDay?.acs1 && day.logDay?.acs2) ? (
@@ -161,11 +161,11 @@ function SidebarRail({ onToggle }) {
   );
 }
 
-export default function LogsSidebar({ open, onToggle, logsRefreshKey, dbRefreshKey, selectedDbDay, onSelectDbDay }) {
+export default function LogsSidebar({ open, onToggle, logsRefreshKey, csvRefreshKey, selectedDay, onSelectDay }) {
   const theme = useTheme();
   const [savedFiles, setSavedFiles] = useState([]);
   const [logDays, setLogDays] = useState([]);
-  const [dbDays, setDbDays] = useState([]);
+  const [csvDays, setCsvDays] = useState([]);
   const [loading, setLoading] = useState(false);
   const daysScrollRef = useRef(null);
 
@@ -175,23 +175,23 @@ export default function LogsSidebar({ open, onToggle, logsRefreshKey, dbRefreshK
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchLogFiles(), fetchLogDays(), fetchDbDays()])
-      .then(([filesPayload, logDaysPayload, dbDaysPayload]) => {
+    Promise.all([fetchLogFiles(), fetchLogDays(), fetchCsvDays()])
+      .then(([filesPayload, logDaysPayload, csvDaysPayload]) => {
         setSavedFiles(filesPayload.files || []);
         setLogDays(logDaysPayload.days || []);
-        setDbDays(dbDaysPayload.days || []);
+        setCsvDays(csvDaysPayload.days || []);
       })
       .catch(() => {
         setSavedFiles([]);
         setLogDays([]);
-        setDbDays([]);
+        setCsvDays([]);
       })
       .finally(() => setLoading(false));
-  }, [logsRefreshKey, dbRefreshKey]);
+  }, [logsRefreshKey, csvRefreshKey]);
 
   const coverageDays = useMemo(
-    () => buildCoverageDays(savedFiles, logDays, dbDays),
-    [savedFiles, logDays, dbDays],
+    () => buildCoverageDays(savedFiles, logDays, csvDays),
+    [savedFiles, logDays, csvDays],
   );
 
   if (!open) {
@@ -280,8 +280,8 @@ export default function LogsSidebar({ open, onToggle, logsRefreshKey, dbRefreshK
               <DayGroup
                 key={day.date}
                 day={day}
-                selected={selectedDbDay === day.date}
-                onSelectDay={(date) => onSelectDbDay(selectedDbDay === date ? "" : date)}
+                selected={selectedDay === day.date}
+                onSelectDay={(date) => onSelectDay(selectedDay === date ? "" : date)}
               />
             ))}
           </Stack>

@@ -6,29 +6,29 @@ import ReportSection from "./ReportSection";
 
 export default function LogsPage() {
   const [queue, setQueue] = useState([]);
-  const [importSummary, setImportSummary] = useState(null);
+  const [parseSummary, setParseSummary] = useState(null);
   const [parseError, setParseError] = useState("");
   const [reportError, setReportError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [logsRefreshKey, setLogsRefreshKey] = useState(0);
-  const [dbRefreshKey, setDbRefreshKey] = useState(0);
-  const [selectedDbDay, setSelectedDbDay] = useState("");
+  const [csvRefreshKey, setCsvRefreshKey] = useState(0);
+  const [selectedDay, setSelectedDay] = useState("");
 
   const refreshLogs = useCallback(() => {
     setLogsRefreshKey((value) => value + 1);
   }, []);
 
-  const refreshDb = useCallback(() => {
-    setDbRefreshKey((value) => value + 1);
+  const refreshCsv = useCallback(() => {
+    setCsvRefreshKey((value) => value + 1);
   }, []);
 
-  const handleImportComplete = useCallback(
+  const handleParseComplete = useCallback(
     (summary) => {
-      setImportSummary(summary);
+      setParseSummary(summary);
       refreshLogs();
-      refreshDb();
+      refreshCsv();
     },
-    [refreshDb, refreshLogs],
+    [refreshCsv, refreshLogs],
   );
 
   const sidebarWidth = sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_RAIL_WIDTH;
@@ -56,9 +56,9 @@ export default function LogsPage() {
           open={sidebarOpen}
           onToggle={() => setSidebarOpen((value) => !value)}
           logsRefreshKey={logsRefreshKey}
-          dbRefreshKey={dbRefreshKey}
-          selectedDbDay={selectedDbDay}
-          onSelectDbDay={setSelectedDbDay}
+          csvRefreshKey={csvRefreshKey}
+          selectedDay={selectedDay}
+          onSelectDay={setSelectedDay}
         />
       </Box>
 
@@ -77,7 +77,7 @@ export default function LogsPage() {
         <ParseImportSection
           queue={queue}
           onQueueChange={setQueue}
-          onImportComplete={handleImportComplete}
+          onParseComplete={handleParseComplete}
           onError={setParseError}
           onLogsUploaded={refreshLogs}
           errorText={parseError}
@@ -85,11 +85,11 @@ export default function LogsPage() {
         />
 
         <ReportSection
-          importSummary={importSummary}
+          parseSummary={parseSummary}
           errorText={reportError}
           onError={setReportError}
-          selectedDbDay={selectedDbDay}
-          refreshKey={dbRefreshKey}
+          selectedDay={selectedDay}
+          refreshKey={csvRefreshKey}
         />
       </Box>
     </Box>

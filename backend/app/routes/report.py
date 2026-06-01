@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.db import load_report_query_sql
+from app.paths import load_report_query_sql
 from app.services.report import run_report_query
 
 router = APIRouter(prefix="/api/report", tags=["report"])

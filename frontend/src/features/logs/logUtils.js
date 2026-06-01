@@ -1,17 +1,17 @@
-export function getDayCoverageStatus(logDay, dbDay) {
+export function getDayCoverageStatus(logDay, csvDay) {
   const hasPair = Boolean(logDay?.acs1 && logDay?.acs2);
-  if (!dbDay) {
-    return { complete: false, label: hasPair ? "Not imported" : "Incomplete" };
+  if (!csvDay) {
+    return { complete: false, label: hasPair ? "Not parsed" : "Incomplete" };
   }
-  if (hasPair && dbDay.fullDay) {
+  if (hasPair && csvDay.fullDay) {
     return { complete: true, label: "Complete" };
   }
-  return { complete: false, label: "Partial" };
+  return { complete: false, label: "Parsed" };
 }
 
-export function buildCoverageDays(files, logDays, dbDays) {
+export function buildCoverageDays(files, logDays, csvDays) {
   const logDayByDate = new Map((logDays || []).map((day) => [day.date, day]));
-  const dbDayByDate = new Map((dbDays || []).map((day) => [day.date, day]));
+  const csvDayByDate = new Map((csvDays || []).map((day) => [day.date, day]));
   const filesByDate = new Map();
 
   for (const file of files || []) {
@@ -24,7 +24,7 @@ export function buildCoverageDays(files, logDays, dbDays) {
   const dates = new Set([
     ...filesByDate.keys(),
     ...(logDays || []).map((day) => day.date),
-    ...(dbDays || []).map((day) => day.date),
+    ...(csvDays || []).map((day) => day.date),
   ]);
 
   return [...dates]
@@ -35,13 +35,13 @@ export function buildCoverageDays(files, logDays, dbDays) {
         acs1: dayFiles.some((file) => file.acsNode === "acs1"),
         acs2: dayFiles.some((file) => file.acsNode === "acs2"),
       };
-      const dbDay = dbDayByDate.get(date) || null;
-      const coverage = getDayCoverageStatus(logDay, dbDay);
+      const csvDay = csvDayByDate.get(date) || null;
+      const coverage = getDayCoverageStatus(logDay, csvDay);
       return {
         date,
         files: dayFiles,
         logDay,
-        dbDay,
+        csvDay,
         complete: coverage.complete,
         statusLabel: coverage.label,
       };
@@ -53,9 +53,9 @@ export function summarizeCoverage(coverageDays) {
   const withLogs = days.filter((day) => day.logDay?.acs1 || day.logDay?.acs2).length;
   const withPair = days.filter((day) => day.logDay?.acs1 && day.logDay?.acs2).length;
   const complete = days.filter((day) => day.complete).length;
-  const imported = days.filter((day) => day.dbDay).length;
-  const totalRows = days.reduce((sum, day) => sum + (day.dbDay?.rowCount || 0), 0);
-  return { withLogs, withPair, complete, imported, totalRows, totalDays: days.length };
+  const parsed = days.filter((day) => day.csvDay).length;
+  const totalRows = days.reduce((sum, day) => sum + (day.csvDay?.rowCount || 0), 0);
+  return { withLogs, withPair, complete, parsed, totalRows, totalDays: days.length };
 }
 
 export function detectAcsNode(fileName) {

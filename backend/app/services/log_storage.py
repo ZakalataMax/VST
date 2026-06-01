@@ -1,31 +1,23 @@
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
-from app.db import get_connection
 from app.parsers.acs_log_parser import _detect_acs_node
+from app.paths import get_log_storage_dir
 
 
 @dataclass
 class LogFileRecord:
-    id: int
+    id: str
     log_date: str
     acs_node: str
     filename: str
     file_size: int
     storage_path: str
     uploaded_at: str
-
-
-def get_log_storage_dir() -> Path:
-    root = Path(__file__).resolve().parents[2]
-    default = root / "data" / "logs"
-    storage_dir = Path(os.getenv("LOG_STORAGE_DIR", str(default)))
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    return storage_dir
 
 
 def parse_log_filename(filename: str) -> tuple[str, str]:
@@ -40,16 +32,33 @@ def parse_log_filename(filename: str) -> tuple[str, str]:
     return dates[0], acs_node
 
 
-def _row_to_record(row: dict) -> LogFileRecord:
-    uploaded_at = row["uploaded_at"]
+def make_file_id(log_date: str, acs_node: str) -> str:
+    return f"{log_date}/{acs_node}"
+
+
+def parse_file_id(file_id: str) -> tuple[str, str]:
+    parts = file_id.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"Invalid log file id: {file_id}")
+    return parts[0], parts[1]
+
+
+def _storage_path_for(log_date: str, acs_node: str) -> str:
+    return f"{log_date}/{acs_node}.log"
+
+
+def _record_from_path(storage_dir: Path, log_date: str, acs_node: str, filename: str) -> LogFileRecord:
+    relative_path = _storage_path_for(log_date, acs_node)
+    path = storage_dir / relative_path
+    uploaded_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
     return LogFileRecord(
-        id=row["id"],
-        log_date=str(row["log_date"]),
-        acs_node=row["acs_node"],
-        filename=row["filename"],
-        file_size=row["file_size"],
-        storage_path=row["storage_path"],
-        uploaded_at=uploaded_at.isoformat() if hasattr(uploaded_at, "isoformat") else str(uploaded_at),
+        id=make_file_id(log_date, acs_node),
+        log_date=log_date,
+        acs_node=acs_node,
+        filename=filename,
+        file_size=path.stat().st_size,
+        storage_path=relative_path,
+        uploaded_at=uploaded_at,
     )
 
 
@@ -64,6 +73,16 @@ def _record_to_dict(record: LogFileRecord) -> dict:
     }
 
 
+def _read_meta(day_dir: Path, acs_node: str) -> tuple[str, str] | None:
+    meta_path = day_dir / f"{acs_node}.meta"
+    if not meta_path.exists():
+        return None
+    lines = meta_path.read_text(encoding="utf-8").splitlines()
+    if len(lines) < 2:
+        return None
+    return lines[0].strip(), lines[1].strip()
+
+
 def save_upload(filename: str, content: bytes) -> dict:
     log_date, acs_node = parse_log_filename(filename)
     storage_dir = get_log_storage_dir()
@@ -71,135 +90,93 @@ def save_upload(filename: str, content: bytes) -> dict:
     day_dir.mkdir(parents=True, exist_ok=True)
     storage_path = day_dir / f"{acs_node}.log"
     storage_path.write_bytes(content)
-
-    relative_path = str(storage_path.relative_to(storage_dir))
-
-    with get_connection() as connection:
-        old_row = connection.execute(
-            """
-            SELECT storage_path
-            FROM log_file
-            WHERE log_date = %s AND acs_node = %s
-            """,
-            (log_date, acs_node),
-        ).fetchone()
-
-        row = connection.execute(
-            """
-            INSERT INTO log_file (log_date, acs_node, filename, file_size, storage_path)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (log_date, acs_node) DO UPDATE SET
-                filename = EXCLUDED.filename,
-                file_size = EXCLUDED.file_size,
-                storage_path = EXCLUDED.storage_path,
-                uploaded_at = now()
-            RETURNING id, log_date, acs_node, filename, file_size, storage_path, uploaded_at
-            """,
-            (log_date, acs_node, filename, len(content), relative_path),
-        ).fetchone()
-        connection.commit()
-
-    if old_row and old_row["storage_path"] != relative_path:
-        old_path = storage_dir / old_row["storage_path"]
-        if old_path.exists() and old_path != storage_path:
-            old_path.unlink(missing_ok=True)
-
-    return _record_to_dict(_row_to_record(row))
+    meta_path = day_dir / f"{acs_node}.meta"
+    meta_path.write_text(f"{filename}\n{datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
+    record = _record_from_path(storage_dir, log_date, acs_node, filename)
+    return _record_to_dict(record)
 
 
 def list_log_files(log_date: str | None = None) -> list[dict]:
-    query = """
-        SELECT id, log_date, acs_node, filename, file_size, storage_path, uploaded_at
-        FROM log_file
-    """
-    params: tuple[str, ...] = ()
+    storage_dir = get_log_storage_dir()
+    records: list[LogFileRecord] = []
+
     if log_date:
-        query += " WHERE log_date = %s"
-        params = (log_date,)
-    query += " ORDER BY log_date DESC, acs_node ASC"
+        day_dirs = [storage_dir / log_date] if (storage_dir / log_date).is_dir() else []
+    else:
+        day_dirs = sorted(
+            (path for path in storage_dir.iterdir() if path.is_dir()),
+            key=lambda path: path.name,
+            reverse=True,
+        )
 
-    with get_connection(readonly=True) as connection:
-        rows = connection.execute(query, params).fetchall()
+    for day_dir in day_dirs:
+        date = day_dir.name
+        for acs_node in ("acs1", "acs2"):
+            log_path = day_dir / f"{acs_node}.log"
+            if not log_path.exists():
+                continue
+            meta = _read_meta(day_dir, acs_node)
+            filename = meta[0] if meta else f"{acs_node.upper()}_{date}.log"
+            records.append(_record_from_path(storage_dir, date, acs_node, filename))
 
-    return [_record_to_dict(_row_to_record(row)) for row in rows]
+    return [_record_to_dict(record) for record in records]
 
 
 def list_log_days() -> list[dict]:
-    with get_connection(readonly=True) as connection:
-        rows = connection.execute(
-            """
-            SELECT
-                log_date,
-                bool_or(acs_node = 'acs1') AS acs1,
-                bool_or(acs_node = 'acs2') AS acs2
-            FROM log_file
-            GROUP BY log_date
-            ORDER BY log_date DESC
-            """
-        ).fetchall()
+    storage_dir = get_log_storage_dir()
+    days: list[dict] = []
 
-    return [
-        {
-            "date": str(row["log_date"]),
-            "acs1": bool(row["acs1"]),
-            "acs2": bool(row["acs2"]),
-            "complete": bool(row["acs1"]) and bool(row["acs2"]),
-        }
-        for row in rows
-    ]
+    for day_dir in sorted(storage_dir.iterdir(), key=lambda path: path.name, reverse=True):
+        if not day_dir.is_dir():
+            continue
+        acs1 = (day_dir / "acs1.log").exists()
+        acs2 = (day_dir / "acs2.log").exists()
+        if not acs1 and not acs2:
+            continue
+        days.append(
+            {
+                "date": day_dir.name,
+                "acs1": acs1,
+                "acs2": acs2,
+                "complete": acs1 and acs2,
+            }
+        )
+
+    return days
 
 
-def read_log_files_by_ids(file_ids: list[int]) -> list[tuple[str, str]]:
+def read_log_files_by_ids(file_ids: list[str]) -> list[tuple[str, str]]:
     if not file_ids:
         raise ValueError("No log files selected.")
 
     storage_dir = get_log_storage_dir()
     unique_ids = sorted(set(file_ids))
-
-    with get_connection(readonly=True) as connection:
-        rows = connection.execute(
-            """
-            SELECT id, filename, storage_path
-            FROM log_file
-            WHERE id = ANY(%s)
-            ORDER BY log_date, acs_node
-            """,
-            (unique_ids,),
-        ).fetchall()
-
-    if len(rows) != len(unique_ids):
-        found_ids = {row["id"] for row in rows}
-        missing = [file_id for file_id in unique_ids if file_id not in found_ids]
-        raise ValueError(f"Log file(s) not found: {', '.join(str(file_id) for file_id in missing)}")
-
     parsed_files: list[tuple[str, str]] = []
-    for row in rows:
-        path = storage_dir / row["storage_path"]
+
+    for file_id in unique_ids:
+        log_date, acs_node = parse_file_id(file_id)
+        path = storage_dir / _storage_path_for(log_date, acs_node)
         if not path.exists():
-            raise ValueError(f"Stored log file missing on disk: {row['filename']}")
-        parsed_files.append((row["filename"], path.read_text(encoding="utf-8", errors="ignore")))
+            raise ValueError(f"Log file not found: {file_id}")
+        meta = _read_meta(storage_dir / log_date, acs_node)
+        filename = meta[0] if meta else path.name
+        parsed_files.append((filename, path.read_text(encoding="utf-8", errors="ignore")))
 
     return parsed_files
 
 
-def delete_log_file(file_id: int) -> None:
+def delete_log_file(file_id: str) -> None:
     storage_dir = get_log_storage_dir()
+    log_date, acs_node = parse_file_id(file_id)
+    day_dir = storage_dir / log_date
+    log_path = day_dir / f"{acs_node}.log"
+    meta_path = day_dir / f"{acs_node}.meta"
 
-    with get_connection() as connection:
-        row = connection.execute(
-            """
-            SELECT storage_path
-            FROM log_file
-            WHERE id = %s
-            """,
-            (file_id,),
-        ).fetchone()
-        if not row:
-            raise ValueError(f"Log file not found: {file_id}")
+    if not log_path.exists():
+        raise ValueError(f"Log file not found: {file_id}")
 
-        connection.execute("DELETE FROM log_file WHERE id = %s", (file_id,))
-        connection.commit()
+    log_path.unlink(missing_ok=True)
+    meta_path.unlink(missing_ok=True)
 
-    path = storage_dir / row["storage_path"]
-    if path.exists():
-        path.unlink()
+    if day_dir.exists() and not any(day_dir.iterdir()):
+        day_dir.rmdir()

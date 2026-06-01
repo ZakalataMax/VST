@@ -13,6 +13,8 @@ frontend/dist
 backend/.env
 backend/__pycache__
 backend/data/logs/
+backend/data/csv/
+backend/data/csv_reports_final/
 
 .idea
 .vscode

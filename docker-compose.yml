@@ -1,48 +1,25 @@
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: vst
-      POSTGRES_USER: vst
-      POSTGRES_PASSWORD: vst
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./backend/db/init:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vst -d vst"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - '8000:8000'
     volumes:
       - ./backend/app:/app/app
       - ./backend/db:/app/db
-      - ./backend/data/logs:/app/data/logs
+      - ./backend/data:/app/data
     environment:
-      DATABASE_URL: postgresql://vst:vst@postgres:5432/vst
-      DATABASE_URL_READONLY: postgresql://vst_readonly:vst_readonly@postgres:5432/vst
       LOG_STORAGE_DIR: /app/data/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
+      CSV_STORAGE_DIR: /app/data/csv
+      REPORT_OUTPUT_DIR: /app/data/csv_reports_final
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build: ./frontend
     ports:
-      - "5173:5173"
+      - '5173:5173'
     volumes:
       - ./frontend:/app
       - /app/node_modules
     environment:
       VITE_API_BASE_URL: http://localhost:8000
     command: npm run dev -- --host 0.0.0.0
-
-volumes:
-  pgdata:

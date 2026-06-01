@@ -16,7 +16,6 @@ docker compose up --build
 **Local**
 
 ```bash
-docker compose up postgres -d
 cp backend/.env.example backend/.env
 
 cd backend && pip install -r requirements.txt
@@ -24,6 +23,14 @@ python -m uvicorn app.main:app --reload --port 8000
 
 cd frontend && npm install && npm run dev
 ```
+
+## Data layout
+
+All runtime data is stored under `backend/data/` (gitignored):
+
+- `logs/{date}/acs1.log`, `acs2.log` — uploaded ACS logs
+- `csv/{date}.csv` — parsed messages per calendar day
+- `csv_reports_final/` — report output CSV files
 
 ## Use
 
@@ -35,5 +42,12 @@ Number formatting, duplicate checking, line splitting.
 
 1. Upload ACS1 and ACS2 `.log` files (drag-and-drop or file picker).
 2. Add days to the parse queue from the Coverage sidebar.
-3. Click **Parse & Import** — parses logs, imports CSV into PostgreSQL. Each date needs both ACS1 and ACS2.
-4. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table.
+3. Click **Parse** — parses logs and saves daily CSV under `data/csv/`. Each date needs both ACS1 and ACS2.
+4. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table; a copy is saved under `data/csv_reports_final/`.
+
+### Report CLI
+
+```bash
+cd backend
+python scripts/build_report.py --mode date --date-from 2026-05-27 --date-to 2026-05-27
+```

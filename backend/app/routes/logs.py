@@ -13,6 +13,7 @@ from app.parsers.acs_log_parser import (
 )
 from app.parsers.csv_writer import rows_to_csv
 from app.parsers.models import CSV_COLUMNS
+from app.services.csv_storage import save_daily_csvs
 from app.services.log_storage import (
     delete_log_file,
     list_log_days,
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api/logs", tags=["logs"])
 
 
 class ParseStoredRequest(BaseModel):
-    file_ids: list[int] = Field(min_length=1)
+    file_ids: list[str] = Field(min_length=1)
 
 
 async def _read_uploads_async(files: list[UploadFile]) -> tuple[list[tuple[str, bytes]], list[str]]:
@@ -52,6 +53,18 @@ async def _read_uploads_async(files: list[UploadFile]) -> tuple[list[tuple[str, 
     return uploads, file_names
 
 
+def _build_parse_response(rows, file_names: list[str]) -> dict:
+    csv_text = rows_to_csv(rows)
+    output_name = build_output_file_name(rows, file_names)
+    saved_csv_days = save_daily_csvs(rows)
+    return {
+        "columns": CSV_COLUMNS,
+        "csv": csv_text,
+        "fileName": output_name,
+        "savedCsvDays": saved_csv_days,
+    }
+
+
 def _parse_uploads(uploads: list[tuple[str, bytes]], file_names: list[str]) -> dict:
     try:
         validate_acs_file_names(file_names)
@@ -60,14 +73,7 @@ def _parse_uploads(uploads: list[tuple[str, bytes]], file_names: list[str]) -> d
 
     parsed_files = read_uploaded_files(uploads)
     rows = parse_log_files(parsed_files)
-    csv_text = rows_to_csv(rows)
-    output_name = build_output_file_name(rows, file_names)
-
-    return {
-        "columns": CSV_COLUMNS,
-        "csv": csv_text,
-        "fileName": output_name,
-    }
+    return _build_parse_response(rows, file_names)
 
 
 @router.post("/upload")
@@ -96,8 +102,8 @@ def get_log_files(date: str | None = None) -> dict:
     return {"files": list_log_files(date)}
 
 
-@router.delete("/files/{file_id}")
-def remove_log_file(file_id: int) -> dict:
+@router.delete("/files/{file_id:path}")
+def remove_log_file(file_id: str) -> dict:
     try:
         delete_log_file(file_id)
     except ValueError as error:
@@ -111,10 +117,7 @@ async def parse_logs(
     file_ids: str | None = Form(None),
 ) -> dict:
     if file_ids:
-        try:
-            ids = [int(value.strip()) for value in file_ids.split(",") if value.strip()]
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail="Invalid file_ids.") from error
+        ids = [value.strip() for value in file_ids.split(",") if value.strip()]
         if not ids:
             raise HTTPException(status_code=400, detail="No log files selected.")
         try:
@@ -127,13 +130,7 @@ async def parse_logs(
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         rows = parse_log_files(stored_files)
-        csv_text = rows_to_csv(rows)
-        output_name = build_output_file_name(rows, file_names)
-        return {
-            "columns": CSV_COLUMNS,
-            "csv": csv_text,
-            "fileName": output_name,
-        }
+        return _build_parse_response(rows, file_names)
 
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
@@ -156,11 +153,4 @@ def parse_stored_logs(body: ParseStoredRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
     rows = parse_log_files(stored_files)
-    csv_text = rows_to_csv(rows)
-    output_name = build_output_file_name(rows, file_names)
-
-    return {
-        "columns": CSV_COLUMNS,
-        "csv": csv_text,
-        "fileName": output_name,
-    }
+    return _build_parse_response(rows, file_names)

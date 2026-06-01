@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.services.log_storage import (
     delete_log_file,
     list_log_days,
     list_log_files,
+    make_file_id,
     read_log_files_by_ids,
     save_upload,
 )
@@ -16,21 +15,7 @@ ACS1_NAME = "ACS1_common.2026-05-24.0.log"
 ACS2_NAME = "ACS2_common.2026-05-24.0.log"
 
 
-@pytest.fixture
-def log_storage_setup(database_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LOG_STORAGE_DIR", str(tmp_path))
-    schema_sql = Path(__file__).resolve().parents[1] / "db" / "init" / "02_log_files.sql"
-
-    import psycopg
-
-    with psycopg.connect(database_url) as connection:
-        connection.execute(schema_sql.read_text(encoding="utf-8"))
-        connection.execute("GRANT SELECT ON log_file TO vst_readonly")
-        connection.execute("TRUNCATE log_file RESTART IDENTITY")
-        connection.commit()
-
-
-def test_save_upload_and_list_days(log_storage_setup: None) -> None:
+def test_save_upload_and_list_days(data_dirs) -> None:
     save_upload(ACS1_NAME, b"acs1-content")
     save_upload(ACS2_NAME, b"acs2-content")
 
@@ -46,18 +31,18 @@ def test_save_upload_and_list_days(log_storage_setup: None) -> None:
     assert {file["acsNode"] for file in files} == {"acs1", "acs2"}
 
 
-def test_replace_same_day_and_node(log_storage_setup: None) -> None:
+def test_replace_same_day_and_node(data_dirs) -> None:
     first = save_upload(ACS1_NAME, b"first")
     second = save_upload(ACS1_NAME, b"second")
 
-    assert first["id"] == second["id"]
+    assert first["id"] == second["id"] == make_file_id("2026-05-24", "acs1")
     assert second["fileSize"] == len(b"second")
 
     stored = read_log_files_by_ids([second["id"]])
     assert stored[0][1] == "second"
 
 
-def test_incomplete_day_inventory(log_storage_setup: None) -> None:
+def test_incomplete_day_inventory(data_dirs) -> None:
     save_upload(ACS1_NAME, b"acs1-only")
 
     days = list_log_days()
@@ -66,7 +51,7 @@ def test_incomplete_day_inventory(log_storage_setup: None) -> None:
     assert days[0]["complete"] is False
 
 
-def test_read_and_delete_log_file(log_storage_setup: None) -> None:
+def test_read_and_delete_log_file(data_dirs) -> None:
     saved = save_upload(ACS1_NAME, b"content")
     stored = read_log_files_by_ids([saved["id"]])
     assert stored[0][0] == ACS1_NAME
@@ -75,6 +60,6 @@ def test_read_and_delete_log_file(log_storage_setup: None) -> None:
     assert list_log_files("2026-05-24") == []
 
 
-def test_read_missing_file_id(log_storage_setup: None) -> None:
+def test_read_missing_file_id(data_dirs) -> None:
     with pytest.raises(ValueError, match="not found"):
-        read_log_files_by_ids([9999])
+        read_log_files_by_ids(["2026-05-24/acs1"])

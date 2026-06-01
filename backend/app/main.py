@@ -8,15 +8,14 @@ load_dotenv(ROOT_DIR / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db import check_db_connection
-from app.routes.db import router as db_router
+from app.routes.csv import router as csv_router
 from app.routes.logs import router as logs_router
 from app.routes.report import router as report_router
 
 app = FastAPI(title="VST API")
 
 app.include_router(logs_router)
-app.include_router(db_router)
+app.include_router(csv_router)
 app.include_router(report_router)
 
 app.add_middleware(
@@ -35,5 +34,4 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
-    db_ok = check_db_connection()
-    return {"status": "ok", "database": "ok" if db_ok else "unavailable"}
+    return {"status": "ok"}

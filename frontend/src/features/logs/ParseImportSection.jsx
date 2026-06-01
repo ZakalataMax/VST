@@ -28,7 +28,6 @@ import {
   resolveDownloadFileName,
   validateQueuePairs,
 } from "./logUtils";
-import { importCsvText } from "../report/api";
 
 function downloadCsvFile(csv, fileName) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -238,7 +237,7 @@ function SavedLogsPanel({ days, queueIds, onAddDay, expanded, onToggle, loading 
 export default function ParseImportSection({
   queue,
   onQueueChange,
-  onImportComplete,
+  onParseComplete,
   onError,
   onLogsUploaded,
   errorText,
@@ -351,8 +350,7 @@ export default function ParseImportSection({
       const finalName = resolveDownloadFileName(payload.fileName, fallbackName);
       downloadCsvFile(payload.csv, finalName);
 
-      const importResult = await importCsvText(payload.csv, finalName);
-      onImportComplete(importResult);
+      onParseComplete({ savedCsvDays: payload.savedCsvDays || [] });
     } catch (error) {
       onError(error.message || "Parse failed.");
     } finally {
@@ -382,9 +380,9 @@ export default function ParseImportSection({
           "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.06) },
         }}
       >
-        <Typography variant="h6">Parse & Import</Typography>
+        <Typography variant="h6">Parse</Typography>
         <Typography variant="body2" color="text.secondary">
-          Drop ACS1 and ACS2 .log files here. Queue saved days, then Parse & Import.
+          Drop ACS1 and ACS2 .log files here. Queue saved days, then Parse.
         </Typography>
       </Box>
       <CardContent sx={{ pt: "16px !important" }}>
@@ -451,7 +449,7 @@ export default function ParseImportSection({
 
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
             <Button variant="contained" onClick={handleParse} disabled={busy || !queue.length}>
-              {parsing ? "Parsing & importing..." : uploading ? "Uploading..." : "Parse & Import"}
+              {parsing ? "Parsing..." : uploading ? "Uploading..." : "Parse"}
             </Button>
             {busy && <CircularProgress size={24} />}
           </Stack>

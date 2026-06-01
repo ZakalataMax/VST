@@ -25,7 +25,7 @@ import {
   alpha,
   useTheme,
 } from "@mui/material";
-import { fetchDbStatus, fetchReportTemplate, runReport } from "../report/api";
+import { fetchCsvDays, fetchReportTemplate, runReport, summarizeCsvDays } from "../report/api";
 import { downloadResultsCsv } from "./reportCsv";
 import { scrollSx } from "../../theme/scrollStyles";
 
@@ -182,16 +182,16 @@ function ReportTable({ columns, rows, scrollRef, loadingMore, sentinelRef, hasMo
 }
 
 export default function ReportSection({
-  importSummary,
+  parseSummary,
   errorText,
   onError,
-  selectedDbDay,
+  selectedDay,
   refreshKey,
 }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
-  const [dbStatus, setDbStatus] = useState(null);
+  const [csvStatus, setCsvStatus] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [useTxnId, setUseTxnId] = useState(false);
@@ -214,36 +214,38 @@ export default function ReportSection({
   }, [loadingMore]);
 
   useEffect(() => {
-    fetchDbStatus()
-      .then((status) => {
-        setDbStatus(status);
+    fetchCsvDays()
+      .then((payload) => {
+        const status = summarizeCsvDays(payload.days);
+        setCsvStatus(status);
         if (!dateFrom && status?.minDate) {
-          setDateFrom(status.minDate);
+          setDateFrom(`${status.minDate} 00:00:00.000`);
         }
         if (!dateTo && status?.maxDate) {
-          setDateTo(status.maxDate);
+          setDateTo(`${status.maxDate} 23:59:59.999`);
         }
       })
       .catch(() => {
-        setDbStatus(null);
+        setCsvStatus(null);
       });
   }, [refreshKey]);
 
   useEffect(() => {
-    if (selectedDbDay) {
-      setDateFrom(`${selectedDbDay} 00:00:00.000`);
-      setDateTo(`${selectedDbDay} 23:59:59.999`);
+    if (selectedDay) {
+      setDateFrom(`${selectedDay} 00:00:00.000`);
+      setDateTo(`${selectedDay} 23:59:59.999`);
     }
-  }, [selectedDbDay]);
+  }, [selectedDay]);
 
   useEffect(() => {
-    if (importSummary?.minDate) {
-      setDateFrom(importSummary.minDate);
+    const savedDays = parseSummary?.savedCsvDays;
+    if (!savedDays?.length) {
+      return;
     }
-    if (importSummary?.maxDate) {
-      setDateTo(importSummary.maxDate);
-    }
-  }, [importSummary]);
+    const sorted = [...savedDays].sort((left, right) => left.date.localeCompare(right.date));
+    setDateFrom(`${sorted[0].date} 00:00:00.000`);
+    setDateTo(`${sorted[sorted.length - 1].date} 23:59:59.999`);
+  }, [parseSummary]);
 
   const buildReportBody = useCallback(
     (nextOffset = 0) => {
@@ -302,7 +304,8 @@ export default function ReportSection({
       setColumns(payload.columns || []);
       setRows((current) => [...current, ...(payload.rows || [])]);
       const chunkLength = (payload.rows || []).length;
-      const more = chunkLength === CHUNK_SIZE;
+      const total = payload.rowCount ?? chunkLength;
+      const more = nextOffset + chunkLength < total;
       setHasMore(more);
       if (more) {
         schedulePrefetch(nextOffset + chunkLength);
@@ -366,7 +369,8 @@ export default function ReportSection({
       setColumns(payload.columns || []);
       setRows(payload.rows || []);
       const chunkLength = (payload.rows || []).length;
-      const more = chunkLength === CHUNK_SIZE;
+      const total = payload.rowCount ?? chunkLength;
+      const more = chunkLength < total;
       setHasMore(more);
       if (more) {
         schedulePrefetch(CHUNK_SIZE);
@@ -427,21 +431,20 @@ export default function ReportSection({
             <Box>
               <Typography variant="h6">Report</Typography>
               <Typography variant="body2" color="text.secondary">
-                Run report against data already imported in the database. Parsing is not required.
+                Run report from parsed CSV files on disk. Final report is saved under csv_reports_final.
               </Typography>
             </Box>
 
-            {dbStatus?.rowCount > 0 && (
+            {csvStatus?.rowCount > 0 && (
               <Typography variant="body2" color="text.secondary">
-                Database: {dbStatus.rowCount.toLocaleString()} rows
-                {dbStatus.minDate && dbStatus.maxDate ? ` (${dbStatus.minDate} — ${dbStatus.maxDate})` : ""}
+                Parsed CSV: {csvStatus.rowCount.toLocaleString()} rows
+                {csvStatus.minDate && csvStatus.maxDate ? ` (${csvStatus.minDate} — ${csvStatus.maxDate})` : ""}
               </Typography>
             )}
 
-            {importSummary && (
+            {parseSummary?.savedCsvDays?.length > 0 && (
               <Alert severity="info">
-                Last import: {importSummary.insertedRows.toLocaleString()} rows ({importSummary.minDate} —{" "}
-                {importSummary.maxDate})
+                Last parse: {parseSummary.savedCsvDays.length} day file(s) saved to data/csv
               </Alert>
             )}
 
