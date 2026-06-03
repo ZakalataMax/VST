@@ -5,9 +5,8 @@ import io
 import re
 import duckdb
 
-from app.paths import get_report_output_dir
+from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import resolve_csv_paths_for_dates
-from app.paths import load_report_query_sql
 from app.services.file_report import (
     _adapt_report_sql_for_duckdb,
     _duckdb_view_sql,
@@ -54,13 +53,15 @@ def _qualifying_txn_sql(min_attempts: int) -> str:
             GROUP BY threedsservertransid
         ),
         failed_txn AS (
-            SELECT DISTINCT e.threedsservertransid
+            SELECT e.threedsservertransid
             FROM window_events e
-            WHERE e.messagetype IN ('ARes', 'RReq', 'CRes')
+            WHERE e.messagetype = 'CRes'
               AND (
                 UPPER(TRIM(COALESCE(e.transstatus, ''))) = 'N'
                 OR TRIM(COALESCE(e.transstatus, '')) = ''
               )
+            GROUP BY e.threedsservertransid
+            HAVING COUNT(*) >= 2
         ),
         qualifying_pairs AS (
             SELECT t.acctnumber, t.acquirermerchantid
