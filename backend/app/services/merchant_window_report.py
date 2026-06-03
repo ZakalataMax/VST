@@ -51,47 +51,26 @@ def _qualifying_txn_sql(min_attempts: int) -> str:
             WHERE threedsservertransid IS NOT NULL AND threedsservertransid <> ''
             GROUP BY threedsservertransid
         ),
-        last_cres AS (
+        cres_not_positive AS (
             SELECT
-                threedsservertransid,
-                MAX(messagedatetime) AS final_cres_datetime
-            FROM window_events
-            WHERE messagetype = 'CRes'
-              AND threedsservertransid IS NOT NULL
-              AND threedsservertransid <> ''
-            GROUP BY threedsservertransid
-        ),
-        failed_txn AS (
-            SELECT DISTINCT e.threedsservertransid
+                t.acctnumber,
+                t.acquirermerchantid,
+                e.threedsservertransid
             FROM window_events e
-            WHERE e.messagetype IN ('ARes', 'RReq')
-              AND (
-                UPPER(TRIM(COALESCE(e.transstatus, ''))) = 'N'
-                OR TRIM(COALESCE(e.transstatus, '')) = ''
-              )
-            UNION
-            SELECT DISTINCT e.threedsservertransid
-            FROM window_events e
-            INNER JOIN last_cres lc ON e.threedsservertransid = lc.threedsservertransid
+            INNER JOIN txn_keys t ON e.threedsservertransid = t.threedsservertransid
             WHERE e.messagetype = 'CRes'
-              AND e.messagedatetime < lc.final_cres_datetime
-              AND (
-                UPPER(TRIM(COALESCE(e.transstatus, ''))) = 'N'
-                OR TRIM(COALESCE(e.transstatus, '')) = ''
-              )
+              AND UPPER(TRIM(COALESCE(e.transstatus, ''))) <> 'Y'
         ),
         qualifying_pairs AS (
-            SELECT t.acctnumber, t.acquirermerchantid
-            FROM failed_txn f
-            INNER JOIN txn_keys t ON f.threedsservertransid = t.threedsservertransid
-            WHERE t.acctnumber IS NOT NULL AND TRIM(t.acctnumber) <> ''
-              AND t.acquirermerchantid IS NOT NULL AND TRIM(t.acquirermerchantid) <> ''
-            GROUP BY t.acctnumber, t.acquirermerchantid
-            HAVING COUNT(DISTINCT f.threedsservertransid) >= {int(min_attempts)}
+            SELECT acctnumber, acquirermerchantid
+            FROM cres_not_positive
+            WHERE acctnumber IS NOT NULL AND TRIM(acctnumber) <> ''
+              AND acquirermerchantid IS NOT NULL AND TRIM(acquirermerchantid) <> ''
+            GROUP BY acctnumber, acquirermerchantid
+            HAVING COUNT(*) >= {int(min_attempts)}
         )
-        SELECT DISTINCT f.threedsservertransid
-        FROM failed_txn f
-        INNER JOIN txn_keys t ON f.threedsservertransid = t.threedsservertransid
+        SELECT DISTINCT t.threedsservertransid
+        FROM txn_keys t
         INNER JOIN qualifying_pairs q
             ON t.acctnumber = q.acctnumber AND t.acquirermerchantid = q.acquirermerchantid
     """
@@ -133,7 +112,7 @@ def run_merchant_window_report(
         if txn_count == 0:
             raise ValueError(
                 "No transactions matched the window test "
-                f"({datetime_from} — {datetime_to}, min {min_attempts} attempts per card+merchant)."
+                f"({datetime_from} — {datetime_to}, min {min_attempts} CRes not Y total per card+merchant)."
             )
 
         connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", report_params)
