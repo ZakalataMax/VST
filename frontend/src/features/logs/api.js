@@ -44,8 +44,8 @@ export async function runMerchantWindowTest(fileIds, options = {}) {
     body: JSON.stringify({
       file_ids: fileIds,
       date: options.date || null,
-      timeFrom: options.timeFrom || "07:00:00",
-      timeTo: options.timeTo || "11:00:00",
+      timeFrom: options.timeFrom || "11:00:00",
+      timeTo: options.timeTo || "15:00:00",
       minAttempts: options.minAttempts ?? 2,
     }),
   });

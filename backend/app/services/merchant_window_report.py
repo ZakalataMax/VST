@@ -27,6 +27,12 @@ def _normalize_time(value: str) -> str:
     return trimmed
 
 
+def _output_time_slug(time_from: str, time_to: str) -> str:
+    start = _normalize_time(time_from).replace(":", "")[:4]
+    end = _normalize_time(time_to).replace(":", "")[:4]
+    return f"{start}-{end}"
+
+
 def _window_bounds(date: str, time_from: str, time_to: str) -> tuple[str, str]:
     day = date.strip()[:10]
     start = _normalize_time(time_from)
@@ -100,6 +106,8 @@ def _qualifying_txn_sql(min_attempts: int) -> str:
         FROM txn_outcome t
         INNER JOIN qualifying_pairs q
             ON t.acctnumber = q.acctnumber AND t.acquirermerchantid = q.acquirermerchantid
+        LEFT JOIN last_cres lc ON t.threedsservertransid = lc.threedsservertransid
+        WHERE lc.threedsservertransid IS NULL
     """
 
 
@@ -115,8 +123,8 @@ def _apply_report_filters(report_sql: str) -> str:
 def run_merchant_window_report(
     *,
     date: str,
-    time_from: str = "07:00:00",
-    time_to: str = "11:00:00",
+    time_from: str = "11:00:00",
+    time_to: str = "15:00:00",
     min_attempts: int = 2,
 ) -> dict:
     if min_attempts < 1:
@@ -139,7 +147,7 @@ def run_merchant_window_report(
             raise ValueError(
                 "No transactions matched the window test "
                 f"({datetime_from} — {datetime_to}, need {min_attempts}+ txns per card+merchant "
-                "with final CRes(Y) count * 3 < other outcomes, ratio strictly below 1:3)."
+                "with Y*3 < other outcomes and at least one txn without any CRes)."
             )
 
         connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", report_params)
@@ -157,7 +165,8 @@ def run_merchant_window_report(
         ]
 
         day = date[:10]
-        output_name = f"report-merchant-window-{day}-0700-1100.csv"
+        window_slug = _output_time_slug(time_from, time_to)
+        output_name = f"report-merchant-window-{day}-{window_slug}.csv"
         output_path = get_report_output_dir() / output_name
         _save_report_csv(columns, all_rows, output_path)
 

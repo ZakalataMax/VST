@@ -47,7 +47,7 @@ Number formatting, duplicate checking, line splitting.
 1. Upload ACS1 and ACS2 `.log` files (drag-and-drop or file picker).
 2. Add days to the parse queue from the Coverage sidebar.
 3. Click **Parse** — parses logs and saves daily CSV under `data/csv/`. Each date needs both ACS1 and ACS2.
-4. **Test 7–11 report** (one-off): group by **card + acquirerMerchantID**, window 07:00–11:00, **≥2 txns**. Per txn, take the **last CRes** in `txn_timeline` (no CRes counts as N). Pair qualifies when `count(CRes Y) * 3 < count(other outcomes)` (ratio Y:others strictly below 1:3; 2Y+6N does not qualify). CSV includes **all** txns of qualifying pairs (`acct_number`, `merchant_name`), sorted by time. Re-parse for `merchantName`. Saved to `data/csv_reports_final/`.
+4. **Test 11–15 report** (one-off): group by **card + acquirerMerchantID**, window **11:00–15:00**, **≥2 txns**. Per txn, **last CRes** in `txn_timeline` (no CRes counts as N for the ratio). Pair qualifies when `count(CRes Y) * 3 < count(other outcomes)`. CSV includes only **txns with no CRes at all** from qualifying pairs (`acct_number`, `merchant_name`), sorted by time. Re-parse for `merchantName`. Saved to `data/csv_reports_final/`.
 5. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table; a copy is saved under `data/csv_reports_final/`.
 
 ### Report CLI

@@ -489,12 +489,12 @@ export default function ParseImportSection({
               onClick={handleWindowTest}
               disabled={busy || !queue.length}
             >
-              {windowTesting ? "Window test..." : "Test 7–11 report"}
+              {windowTesting ? "Window test..." : "Test 11–15 report"}
             </Button>
             {busy && <CircularProgress size={24} />}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Test 7–11: card+acquirerMerchantID, ≥2 txns; Y*3 less than others (strictly below 1:3). All txns in CSV.
+            Test 11–15: card+acquirerMerchantID, Y*3 less than others; CSV only txns with no CRes in chain.
           </Typography>
 
           {errorText ? <Alert severity="error">{errorText}</Alert> : null}

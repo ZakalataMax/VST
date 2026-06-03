@@ -34,8 +34,8 @@ class ParseStoredRequest(BaseModel):
 class MerchantWindowTestRequest(BaseModel):
     file_ids: list[str] = Field(min_length=1)
     date: str | None = None
-    timeFrom: str = "07:00:00"
-    timeTo: str = "11:00:00"
+    timeFrom: str = "11:00:00"
+    timeTo: str = "15:00:00"
     minAttempts: int = Field(default=2, ge=1)
 
 
