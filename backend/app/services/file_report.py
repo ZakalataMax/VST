@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import csv
 import re
 from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
 
+from app.parsers.csv_writer import dict_rows_to_csv, save_dict_rows_csv
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import CSV_TO_DB, list_all_csv_paths, resolve_csv_paths_for_dates
 from app.services.report import (
@@ -88,11 +88,7 @@ def _build_report_output_name(
 
 
 def _save_report_csv(columns: list[str], rows: list[dict], output_path: Path) -> None:
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+    save_dict_rows_csv(output_path, columns, rows)
 
 
 def run_report_query(

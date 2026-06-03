@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import csv
-import io
 import re
 import duckdb
 
+from app.parsers.csv_writer import dict_rows_to_csv
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import resolve_csv_paths_for_dates
 from app.services.file_report import (
@@ -156,15 +155,11 @@ def run_merchant_window_report(
         output_path = get_report_output_dir() / output_name
         _save_report_csv(columns, all_rows, output_path)
 
-        buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=columns, lineterminator="\n")
-        writer.writeheader()
-        for row in all_rows:
-            writer.writerow(row)
+        csv_text = dict_rows_to_csv(columns, all_rows)
 
         return {
             "columns": columns,
-            "csv": buffer.getvalue(),
+            "csv": csv_text,
             "fileName": output_name,
             "savedPath": str(output_path),
             "rowCount": len(all_rows),

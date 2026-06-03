@@ -2,16 +2,52 @@ from __future__ import annotations
 
 import csv
 import io
-import json
-from typing import Iterable
+import os
+from pathlib import Path
+from typing import Iterable, TextIO
 
 from app.parsers.models import CSV_COLUMNS, MessageRow
+
+CSV_DELIMITER = os.getenv("CSV_DELIMITER", ";")
+
+
+def csv_dict_writer(handle: TextIO, fieldnames: list[str], **kwargs) -> csv.DictWriter:
+    return csv.DictWriter(
+        handle,
+        fieldnames=fieldnames,
+        delimiter=CSV_DELIMITER,
+        lineterminator="\n",
+        quoting=csv.QUOTE_MINIMAL,
+        extrasaction=kwargs.pop("extrasaction", "raise"),
+        **kwargs,
+    )
+
+
+def csv_dict_reader(handle: TextIO, **kwargs) -> csv.DictReader:
+    return csv.DictReader(handle, delimiter=CSV_DELIMITER, **kwargs)
+
+
+def duckdb_read_csv_delim() -> str:
+    return CSV_DELIMITER.replace("'", "''")
 
 
 def rows_to_csv(rows: Iterable[MessageRow]) -> str:
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS, extrasaction="ignore", lineterminator="\n")
+    writer = csv_dict_writer(output, fieldnames=CSV_COLUMNS, extrasaction="ignore")
     writer.writeheader()
     for row in rows:
         writer.writerow(row.to_csv_dict())
     return output.getvalue()
+
+
+def dict_rows_to_csv(columns: list[str], rows: list[dict]) -> str:
+    output = io.StringIO()
+    writer = csv_dict_writer(output, fieldnames=columns)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({column: row.get(column, "") for column in columns})
+    return output.getvalue()
+
+
+def save_dict_rows_csv(path: Path, columns: list[str], rows: list[dict]) -> None:
+    path.write_text(dict_rows_to_csv(columns, rows), encoding="utf-8-sig")
