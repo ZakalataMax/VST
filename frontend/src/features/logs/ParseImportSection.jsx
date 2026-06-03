@@ -494,8 +494,7 @@ export default function ParseImportSection({
             {busy && <CircularProgress size={24} />}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Test 7–11: card+merchant with ≥2 CRes not Y total across all txns in 07:00–11:00 → full report CSV
-            (filter in Excel).
+            Test 7–11: card+merchant with ≥2 different txns and ≥2 CRes not Y in 07:00–11:00 → full report CSV.
           </Typography>
 
           {errorText ? <Alert severity="error">{errorText}</Alert> : null}

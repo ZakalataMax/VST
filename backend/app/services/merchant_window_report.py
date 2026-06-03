@@ -67,7 +67,8 @@ def _qualifying_txn_sql(min_attempts: int) -> str:
             WHERE acctnumber IS NOT NULL AND TRIM(acctnumber) <> ''
               AND acquirermerchantid IS NOT NULL AND TRIM(acquirermerchantid) <> ''
             GROUP BY acctnumber, acquirermerchantid
-            HAVING COUNT(*) >= {int(min_attempts)}
+            HAVING COUNT(DISTINCT threedsservertransid) >= {int(min_attempts)}
+               AND COUNT(*) >= {int(min_attempts)}
         )
         SELECT DISTINCT t.threedsservertransid
         FROM txn_keys t
@@ -112,7 +113,7 @@ def run_merchant_window_report(
         if txn_count == 0:
             raise ValueError(
                 "No transactions matched the window test "
-                f"({datetime_from} — {datetime_to}, min {min_attempts} CRes not Y total per card+merchant)."
+                f"({datetime_from} — {datetime_to}, need {min_attempts}+ txns and {min_attempts}+ CRes not Y per card+merchant)."
             )
 
         connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", report_params)
