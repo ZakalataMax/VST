@@ -52,16 +52,34 @@ def _qualifying_txn_sql(min_attempts: int) -> str:
             WHERE threedsservertransid IS NOT NULL AND threedsservertransid <> ''
             GROUP BY threedsservertransid
         ),
+        last_cres AS (
+            SELECT
+                threedsservertransid,
+                MAX(messagedatetime) AS final_cres_datetime
+            FROM window_events
+            WHERE messagetype = 'CRes'
+              AND threedsservertransid IS NOT NULL
+              AND threedsservertransid <> ''
+            GROUP BY threedsservertransid
+        ),
         failed_txn AS (
-            SELECT e.threedsservertransid
+            SELECT DISTINCT e.threedsservertransid
             FROM window_events e
-            WHERE e.messagetype = 'CRes'
+            WHERE e.messagetype IN ('ARes', 'RReq')
               AND (
                 UPPER(TRIM(COALESCE(e.transstatus, ''))) = 'N'
                 OR TRIM(COALESCE(e.transstatus, '')) = ''
               )
-            GROUP BY e.threedsservertransid
-            HAVING COUNT(*) >= 2
+            UNION
+            SELECT DISTINCT e.threedsservertransid
+            FROM window_events e
+            INNER JOIN last_cres lc ON e.threedsservertransid = lc.threedsservertransid
+            WHERE e.messagetype = 'CRes'
+              AND e.messagedatetime < lc.final_cres_datetime
+              AND (
+                UPPER(TRIM(COALESCE(e.transstatus, ''))) = 'N'
+                OR TRIM(COALESCE(e.transstatus, '')) = ''
+              )
         ),
         qualifying_pairs AS (
             SELECT t.acctnumber, t.acquirermerchantid

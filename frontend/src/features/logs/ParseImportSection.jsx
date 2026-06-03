@@ -494,8 +494,8 @@ export default function ParseImportSection({
             {busy && <CircularProgress size={24} />}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Test 7–11: parse queue, then card+merchant with ≥2 txns where each has ≥2 CRes (N or empty); final CRes
-            ignored → standard report CSV.
+            Test 7–11: parse queue, then card+merchant with ≥2 attempts where ARes/RReq or pre-final CRes had N or empty
+            (final CRes ignored) → standard report CSV.
           </Typography>
 
           {errorText ? <Alert severity="error">{errorText}</Alert> : null}

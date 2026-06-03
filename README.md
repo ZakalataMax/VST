@@ -47,7 +47,7 @@ Number formatting, duplicate checking, line splitting.
 1. Upload ACS1 and ACS2 `.log` files (drag-and-drop or file picker).
 2. Add days to the parse queue from the Coverage sidebar.
 3. Click **Parse** — parses logs and saves daily CSV under `data/csv/`. Each date needs both ACS1 and ACS2.
-4. **Test 7–11 report** (one-off): same queue as Parse — parses logs, then exports the standard report CSV for card+merchant pairs with ≥2 transactions between 07:00–11:00 where each txn has ≥2 CRes with transStatus N or empty (final CRes does not matter). Saved to `data/csv_reports_final/`.
+4. **Test 7–11 report** (one-off): same queue as Parse — parses logs, then exports the standard report CSV for card+merchant pairs with ≥2 attempts between 07:00–11:00 where **before the final CRes** there was ARes/RReq or an earlier CRes with transStatus N or empty (final CRes Y/N does not count). Saved to `data/csv_reports_final/`.
 5. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table; a copy is saved under `data/csv_reports_final/`.
 
 ### Report CLI
