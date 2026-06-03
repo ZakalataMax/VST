@@ -21,6 +21,7 @@ CSV_COLUMNS = [
     "challengeCancel",
     "threeDSServerOperatorID",
     "acquirerMerchantID",
+    "merchantName",
     "acctNumber",
     "acquirerBIN",
     "browserIP",
@@ -76,6 +77,7 @@ class MessageRow:
     challenge_cancel: str = ""
     three_ds_server_operator_id: str = ""
     acquirer_merchant_id: str = ""
+    merchant_name: str = ""
     acct_number: str = ""
     acquirer_bin: str = ""
     browser_ip: str = ""
@@ -111,6 +113,7 @@ class MessageRow:
             "challengeCancel": self.challenge_cancel,
             "threeDSServerOperatorID": self.three_ds_server_operator_id,
             "acquirerMerchantID": self.acquirer_merchant_id,
+            "merchantName": self.merchant_name,
             "acctNumber": self.acct_number,
             "acquirerBIN": self.acquirer_bin,
             "browserIP": self.browser_ip,

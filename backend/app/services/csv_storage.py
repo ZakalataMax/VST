@@ -28,6 +28,7 @@ CSV_TO_DB: dict[str, str] = {
     "challengeCancel": "challengecancel",
     "threeDSServerOperatorID": "threedsserveroperatorid",
     "acquirerMerchantID": "acquirermerchantid",
+    "merchantName": "merchantname",
     "acctNumber": "acctnumber",
     "acquirerBIN": "acquirerbin",
     "browserIP": "browserip",

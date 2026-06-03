@@ -19,6 +19,7 @@ JSON_FIELD_MAP = {
     "challengeCancel": "challenge_cancel",
     "threeDSServerOperatorID": "three_ds_server_operator_id",
     "acquirerMerchantID": "acquirer_merchant_id",
+    "merchantName": "merchant_name",
     "acctNumber": "acct_number",
     "acquirerBIN": "acquirer_bin",
     "browserIP": "browser_ip",

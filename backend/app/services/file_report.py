@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import csv
 import re
 from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
 
-from app.parsers.csv_writer import dict_rows_to_csv, save_dict_rows_csv
+from app.parsers.csv_writer import CSV_DELIMITER, dict_rows_to_csv, duckdb_read_csv_delim, save_dict_rows_csv
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import CSV_TO_DB, list_all_csv_paths, resolve_csv_paths_for_dates
 from app.services.report import (
@@ -35,16 +36,28 @@ def _iter_dates(date_from: str, date_to: str | None) -> list[str]:
     return dates
 
 
+def _csv_header_columns(csv_paths: list[Path]) -> set[str]:
+    if not csv_paths:
+        return set()
+    with csv_paths[0].open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.reader(handle, delimiter=CSV_DELIMITER)
+        return set(next(reader, []))
+
+
 def _duckdb_view_sql(csv_paths: list[Path]) -> str:
     paths_literal = ", ".join(f"'{path.as_posix()}'" for path in csv_paths)
+    available = _csv_header_columns(csv_paths)
     select_columns = ",\n        ".join(
-        f'"{csv_col}" AS {db_col}' for csv_col, db_col in CSV_TO_DB.items()
+        f'"{csv_col}" AS {db_col}'
+        if csv_col in available
+        else f"NULL::VARCHAR AS {db_col}"
+        for csv_col, db_col in CSV_TO_DB.items()
     )
     return f"""
         CREATE OR REPLACE VIEW cust_acs_3dsmess AS
         SELECT
             {select_columns}
-        FROM read_csv([{paths_literal}], header=true, union_by_name=true, all_varchar=true)
+        FROM read_csv([{paths_literal}], header=true, delim='{duckdb_read_csv_delim()}', union_by_name=true, all_varchar=true)
     """
 
 

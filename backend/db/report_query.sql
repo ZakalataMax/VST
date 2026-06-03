@@ -3,7 +3,8 @@ areq AS (
     SELECT
         ds.messagedatetime,
         ds.threedsservertransid,
-        ds.acctnumber
+        ds.acctnumber,
+        ds.merchantname
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'AReq'
 ),
@@ -139,7 +140,8 @@ SELECT
     END AS txn_result,
     timeline.txn_timeline,
     erro.errorcode,
-    areq.acctnumber AS acct_number
+    areq.acctnumber AS acct_number,
+    areq.merchantname AS merchant_name
 FROM areq
 LEFT JOIN ares ON areq.threedsservertransid = ares.threedsservertransid
 LEFT JOIN cres ON areq.threedsservertransid = cres.threedsservertransid

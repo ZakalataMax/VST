@@ -51,30 +51,65 @@ def _qualifying_txn_sql(min_attempts: int) -> str:
             WHERE threedsservertransid IS NOT NULL AND threedsservertransid <> ''
             GROUP BY threedsservertransid
         ),
-        cres_not_positive AS (
+        last_cres AS (
             SELECT
+                threedsservertransid,
+                MAX(messagedatetime) AS final_cres_datetime
+            FROM window_events
+            WHERE messagetype = 'CRes'
+              AND threedsservertransid IS NOT NULL
+              AND threedsservertransid <> ''
+            GROUP BY threedsservertransid
+        ),
+        final_cres_row AS (
+            SELECT
+                e.threedsservertransid,
+                UPPER(TRIM(COALESCE(e.transstatus, ''))) AS final_status
+            FROM window_events e
+            INNER JOIN last_cres lc
+                ON e.threedsservertransid = lc.threedsservertransid
+               AND e.messagedatetime = lc.final_cres_datetime
+            WHERE e.messagetype = 'CRes'
+        ),
+        txn_outcome AS (
+            SELECT
+                t.threedsservertransid,
                 t.acctnumber,
                 t.acquirermerchantid,
-                e.threedsservertransid
-            FROM window_events e
-            INNER JOIN txn_keys t ON e.threedsservertransid = t.threedsservertransid
-            WHERE e.messagetype = 'CRes'
-              AND UPPER(TRIM(COALESCE(e.transstatus, ''))) <> 'Y'
+                CASE
+                    WHEN f.final_status = 'Y' THEN 'Y'
+                    ELSE 'N'
+                END AS outcome
+            FROM txn_keys t
+            LEFT JOIN final_cres_row f ON t.threedsservertransid = f.threedsservertransid
         ),
         qualifying_pairs AS (
             SELECT acctnumber, acquirermerchantid
-            FROM cres_not_positive
+            FROM txn_outcome
             WHERE acctnumber IS NOT NULL AND TRIM(acctnumber) <> ''
               AND acquirermerchantid IS NOT NULL AND TRIM(acquirermerchantid) <> ''
             GROUP BY acctnumber, acquirermerchantid
             HAVING COUNT(DISTINCT threedsservertransid) >= {int(min_attempts)}
-               AND COUNT(*) >= {int(min_attempts)}
+               AND (
+                    SUM(CASE WHEN outcome = 'Y' THEN 1 ELSE 0 END) = 0
+                    OR SUM(CASE WHEN outcome = 'Y' THEN 1 ELSE 0 END) * 3
+                       < SUM(CASE WHEN outcome = 'N' THEN 1 ELSE 0 END)
+               )
         )
         SELECT DISTINCT t.threedsservertransid
-        FROM txn_keys t
+        FROM txn_outcome t
         INNER JOIN qualifying_pairs q
             ON t.acctnumber = q.acctnumber AND t.acquirermerchantid = q.acquirermerchantid
     """
+
+
+def _apply_report_filters(report_sql: str) -> str:
+    report_sql = report_sql.rstrip()
+    extra = "\n  AND areq.threedsservertransid IN (SELECT threedsservertransid FROM qualifying_txn)\n"
+    if report_sql.upper().endswith("ORDER BY 1"):
+        body = report_sql[: -len("ORDER BY 1")].rstrip()
+        return body + extra + "ORDER BY areq_messagedatetime, acct_number, merchant_name, areq.threedsservertransid"
+    return report_sql + extra + " ORDER BY areq_messagedatetime, acct_number, merchant_name, areq.threedsservertransid"
 
 
 def run_merchant_window_report(
@@ -89,17 +124,7 @@ def run_merchant_window_report(
 
     datetime_from, datetime_to = _window_bounds(date, time_from, time_to)
     csv_paths = resolve_csv_paths_for_dates([date[:10]])
-    report_sql = _adapt_report_sql_for_duckdb(load_report_query_sql()).rstrip()
-    if report_sql.upper().endswith("ORDER BY 1"):
-        report_sql = (
-            report_sql[:-len("ORDER BY 1")].rstrip()
-            + "\n  AND areq.threedsservertransid IN (SELECT threedsservertransid FROM qualifying_txn)\n"
-            + "ORDER BY 1"
-        )
-    else:
-        report_sql += (
-            "\n  AND areq.threedsservertransid IN (SELECT threedsservertransid FROM qualifying_txn)"
-        )
+    report_sql = _apply_report_filters(_adapt_report_sql_for_duckdb(load_report_query_sql()))
     report_params = _report_params(datetime_from, datetime_to, None)
 
     connection = duckdb.connect()
@@ -113,7 +138,8 @@ def run_merchant_window_report(
         if txn_count == 0:
             raise ValueError(
                 "No transactions matched the window test "
-                f"({datetime_from} — {datetime_to}, need {min_attempts}+ txns and {min_attempts}+ CRes not Y per card+merchant)."
+                f"({datetime_from} — {datetime_to}, need {min_attempts}+ txns per card+merchant "
+                "with final CRes(Y) count * 3 < other outcomes, ratio strictly below 1:3)."
             )
 
         connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", report_params)
@@ -124,7 +150,7 @@ def run_merchant_window_report(
                 "WHERE table_name = 'report_result' ORDER BY ordinal_position"
             ).fetchall()
         ]
-        all_rows_raw = connection.execute("SELECT * FROM report_result ORDER BY 1").fetchall()
+        all_rows_raw = connection.execute("SELECT * FROM report_result").fetchall()
         all_rows = [
             {col: ("" if value is None else str(value)) for col, value in zip(columns, row)}
             for row in all_rows_raw
