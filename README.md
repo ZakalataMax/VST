@@ -24,6 +24,10 @@ python -m uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
+The Vite dev server proxies `/api` to the backend, so CORS issues are avoided when using `npm run dev`. Restart the frontend after changing `vite.config.js`.
+
+Large `.log` uploads can be slow through the Vite proxy. For faster uploads locally, copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_DIRECT_URL=http://127.0.0.1:8000` (backend CORS already allows this).
+
 ## Data layout
 
 All runtime data is stored under `backend/data/` (gitignored):
@@ -43,7 +47,8 @@ Number formatting, duplicate checking, line splitting.
 1. Upload ACS1 and ACS2 `.log` files (drag-and-drop or file picker).
 2. Add days to the parse queue from the Coverage sidebar.
 3. Click **Parse** — parses logs and saves daily CSV under `data/csv/`. Each date needs both ACS1 and ACS2.
-4. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table; a copy is saved under `data/csv_reports_final/`.
+4. **Test 7–11 report** (one-off): same queue as Parse — parses logs, then exports the standard report CSV for card+merchant pairs with ≥2 failed attempts between 07:00–11:00 (any ARes/RReq/CRes with transStatus N or empty). Saved to `data/csv_reports_final/`.
+5. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table; a copy is saved under `data/csv_reports_final/`.
 
 ### Report CLI
 

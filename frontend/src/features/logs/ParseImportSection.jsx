@@ -19,7 +19,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchLogDays, fetchLogFiles, parseStoredLogs, uploadLogs } from "./api";
+import { fetchLogDays, fetchLogFiles, parseStoredLogs, runMerchantWindowTest, uploadLogs } from "./api";
 import {
   buildCoverageDays,
   buildFileNameFromQueue,
@@ -247,6 +247,7 @@ export default function ParseImportSection({
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [windowTesting, setWindowTesting] = useState(false);
   const [savedFiles, setSavedFiles] = useState([]);
   const [logDays, setLogDays] = useState([]);
   const [savedLoading, setSavedLoading] = useState(false);
@@ -331,6 +332,37 @@ export default function ParseImportSection({
     onQueueChange((current) => current.filter((item) => item.id !== fileId));
   };
 
+  const handleWindowTest = async () => {
+    if (!queue.length) {
+      onError("Add at least one log file to the parse queue.");
+      return;
+    }
+    const pairError = validateQueuePairs(queue);
+    if (pairError) {
+      onError(pairError);
+      return;
+    }
+
+    setWindowTesting(true);
+    onError("");
+    try {
+      const payload = await runMerchantWindowTest(queue.map((item) => item.id));
+      downloadCsvFile(payload.csv, payload.fileName || "report-merchant-window.csv");
+      onParseComplete({
+        savedCsvDays: [{ date: payload.date, rowCount: payload.rowCount }],
+        windowTest: {
+          qualifyingTxnCount: payload.qualifyingTxnCount,
+          rowCount: payload.rowCount,
+          savedPath: payload.savedPath,
+        },
+      });
+    } catch (error) {
+      onError(error.message || "Window test failed.");
+    } finally {
+      setWindowTesting(false);
+    }
+  };
+
   const handleParse = async () => {
     if (!queue.length) {
       onError("Add at least one log file to the parse queue.");
@@ -358,7 +390,7 @@ export default function ParseImportSection({
     }
   };
 
-  const busy = uploading || parsing;
+  const busy = uploading || parsing || windowTesting;
   const contentRef = useRef(null);
 
   const scrollToTop = () => {
@@ -451,8 +483,20 @@ export default function ParseImportSection({
             <Button variant="contained" onClick={handleParse} disabled={busy || !queue.length}>
               {parsing ? "Parsing..." : uploading ? "Uploading..." : "Parse"}
             </Button>
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={handleWindowTest}
+              disabled={busy || !queue.length}
+            >
+              {windowTesting ? "Window test..." : "Test 7–11 report"}
+            </Button>
             {busy && <CircularProgress size={24} />}
           </Stack>
+          <Typography variant="caption" color="text.secondary">
+            Test 7–11: parse queue, then card+merchant with ≥2 failed attempts (ARes/RReq/any CRes N or empty) →
+            standard report CSV.
+          </Typography>
 
           {errorText ? <Alert severity="error">{errorText}</Alert> : null}
         </Stack>

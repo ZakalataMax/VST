@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const UPLOAD_API_BASE_URL = import.meta.env.VITE_API_DIRECT_URL || API_BASE_URL;
 
 async function parseResponse(response) {
   let payload = null;
@@ -18,7 +19,7 @@ export async function uploadLogs(files) {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
 
-  const response = await fetch(`${API_BASE_URL}/api/logs/upload`, {
+  const response = await fetch(`${UPLOAD_API_BASE_URL}/api/logs/upload`, {
     method: "POST",
     body: formData,
   });
@@ -33,6 +34,21 @@ export async function fetchLogDays() {
 export async function fetchLogFiles(date) {
   const query = date ? `?date=${encodeURIComponent(date)}` : "";
   const response = await fetch(`${API_BASE_URL}/api/logs/files${query}`);
+  return parseResponse(response);
+}
+
+export async function runMerchantWindowTest(fileIds, options = {}) {
+  const response = await fetch(`${API_BASE_URL}/api/logs/merchant-window-test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      file_ids: fileIds,
+      date: options.date || null,
+      timeFrom: options.timeFrom || "07:00:00",
+      timeTo: options.timeTo || "11:00:00",
+      minAttempts: options.minAttempts ?? 2,
+    }),
+  });
   return parseResponse(response);
 }
 

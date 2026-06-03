@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -14,12 +15,13 @@ from app.parsers.acs_log_parser import (
 from app.parsers.csv_writer import rows_to_csv
 from app.parsers.models import CSV_COLUMNS
 from app.services.csv_storage import save_daily_csvs
+from app.services.merchant_window_report import run_merchant_window_report
 from app.services.log_storage import (
     delete_log_file,
     list_log_days,
     list_log_files,
     read_log_files_by_ids,
-    save_upload,
+    save_upload_stream,
 )
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
@@ -27,6 +29,31 @@ router = APIRouter(prefix="/api/logs", tags=["logs"])
 
 class ParseStoredRequest(BaseModel):
     file_ids: list[str] = Field(min_length=1)
+
+
+class MerchantWindowTestRequest(BaseModel):
+    file_ids: list[str] = Field(min_length=1)
+    date: str | None = None
+    timeFrom: str = "07:00:00"
+    timeTo: str = "11:00:00"
+    minAttempts: int = Field(default=2, ge=1)
+
+
+def _single_date_from_file_names(file_names: list[str]) -> str:
+    dates = sorted(
+        {
+            match
+            for name in file_names
+            for match in re.findall(r"(\d{4}-\d{2}-\d{2})", name)
+        }
+    )
+    if not dates:
+        raise ValueError("Cannot detect date in log file names.")
+    if len(dates) > 1:
+        raise ValueError(
+            f"Window test expects one calendar day in the queue. Found: {', '.join(dates)}"
+        )
+    return dates[0]
 
 
 async def _read_uploads_async(files: list[UploadFile]) -> tuple[list[tuple[str, bytes]], list[str]]:
@@ -81,13 +108,21 @@ async def upload_logs(files: list[UploadFile] = File(...)) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
 
-    uploads, _ = await _read_uploads_async(files)
+    max_total_upload_mb = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "500"))
+    remaining_bytes = [max_total_upload_mb * 1024 * 1024]
     saved_files: list[dict] = []
-    for file_name, content_bytes in uploads:
+
+    for upload in files:
+        file_name = upload.filename or "uploaded.log"
+        if not file_name.lower().endswith(".log"):
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_name}")
         try:
-            saved_files.append(save_upload(file_name, content_bytes))
+            saved_files.append(save_upload_stream(upload, remaining_bytes))
         except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+            detail = str(error)
+            if "exceeds" in detail:
+                raise HTTPException(status_code=413, detail=detail) from error
+            raise HTTPException(status_code=400, detail=detail) from error
 
     return {"files": saved_files}
 
@@ -154,3 +189,36 @@ def parse_stored_logs(body: ParseStoredRequest) -> dict:
 
     rows = parse_log_files(stored_files)
     return _build_parse_response(rows, file_names)
+
+
+@router.post("/merchant-window-test")
+def merchant_window_test(body: MerchantWindowTestRequest) -> dict:
+    try:
+        stored_files = read_log_files_by_ids(body.file_ids)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    file_names = [name for name, _ in stored_files]
+    try:
+        validate_acs_file_names(file_names)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    rows = parse_log_files(stored_files)
+    save_daily_csvs(rows)
+
+    report_date = body.date.strip() if body.date else _single_date_from_file_names(file_names)
+
+    try:
+        result = run_merchant_window_report(
+            date=report_date,
+            time_from=body.timeFrom,
+            time_to=body.timeTo,
+            min_attempts=body.minAttempts,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Window test failed: {error}") from error
+
+    return result
