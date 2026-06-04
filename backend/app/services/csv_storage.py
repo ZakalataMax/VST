@@ -32,6 +32,7 @@ CSV_TO_DB: dict[str, str] = {
     "acctNumber": "acctnumber",
     "acquirerBIN": "acquirerbin",
     "browserIP": "browserip",
+    "browserUserAgent": "browseruseragent",
     "errorCode": "errorcode",
     "isChallengeExpired": "ischallengeexpired",
     "oobResultStatus": "oobresultstatus",

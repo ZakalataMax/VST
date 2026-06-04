@@ -8,6 +8,7 @@ areq AS (
         ds.browseruseragent
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'AReq'
+      AND ds.browseruseragent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
 ),
 ares AS (
     SELECT
@@ -94,8 +95,8 @@ event_token AS (
             WHEN e.messagetype = 'ChallengeMethod'
             THEN 'ChMethod('
                 || CASE
-                     WHEN e.challengemethod LIKE 'OTP%%' THEN 'OTP'
-                     WHEN e.challengemethod LIKE 'OOB%%' THEN 'OOB'
+                     WHEN e.challengemethod LIKE 'OTP%' THEN 'OTP'
+                     WHEN e.challengemethod LIKE 'OOB%' THEN 'OOB'
                      ELSE e.challengemethod
                    END
                 || '+' || e.challengemethodcode || ')'
@@ -121,22 +122,23 @@ SELECT
     areq.messagedatetime AS areq_messagedatetime,
     substr(areq.messagedatetime, 1, 10) AS areq_messagedate,
     areq.threedsservertransid,
+    areq.browseruseragent AS browser_user_agent,
     CASE
-        WHEN areq.acctnumber LIKE '4%%' THEN 'Visa'
-        WHEN areq.acctnumber LIKE '5%%' THEN 'MC'
+        WHEN areq.acctnumber LIKE '4%' THEN 'Visa'
+        WHEN areq.acctnumber LIKE '5%' THEN 'MC'
     END AS card_scheme,
     'ARES: ' || COALESCE(ares.transstatus, 'NULL')
         || '+' || COALESCE(ares.transstatusreason, 'NULL') AS ares_status,
     'CRES: ' || COALESCE(cres.transstatus, 'NULL')
         || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
     CASE
-        WHEN timeline.txn_timeline LIKE '%%Erro(%%' THEN 'Erro'
-        WHEN timeline.txn_timeline LIKE '%%Challenge expired%%' THEN 'Timeout'
-        WHEN timeline.txn_timeline LIKE '%%OOB to OTP%%' THEN 'OOB_to_OTP'
-        WHEN timeline.txn_timeline LIKE '%%IsChallengeSucceded: false%%' THEN 'Challenge_FAIL'
-        WHEN timeline.txn_timeline LIKE '%%IsChallengeSucceded: true%%' THEN 'Challenge_OK'
-        WHEN timeline.txn_timeline LIKE '%%OobResultReq%%' THEN 'OOB_flow'
-        WHEN timeline.txn_timeline LIKE '%%OobInitReq%%' THEN 'OOB_started'
+        WHEN timeline.txn_timeline LIKE '%Erro(%' THEN 'Erro'
+        WHEN timeline.txn_timeline LIKE '%Challenge expired%' THEN 'Timeout'
+        WHEN timeline.txn_timeline LIKE '%OOB to OTP%' THEN 'OOB_to_OTP'
+        WHEN timeline.txn_timeline LIKE '%IsChallengeSucceded: false%' THEN 'Challenge_FAIL'
+        WHEN timeline.txn_timeline LIKE '%IsChallengeSucceded: true%' THEN 'Challenge_OK'
+        WHEN timeline.txn_timeline LIKE '%OobResultReq%' THEN 'OOB_flow'
+        WHEN timeline.txn_timeline LIKE '%OobInitReq%' THEN 'OOB_started'
         ELSE 'Other'
     END AS txn_result,
     timeline.txn_timeline,
@@ -148,7 +150,4 @@ LEFT JOIN ares ON areq.threedsservertransid = ares.threedsservertransid
 LEFT JOIN cres ON areq.threedsservertransid = cres.threedsservertransid
 LEFT JOIN timeline ON areq.threedsservertransid = timeline.threedsservertransid
 LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
-WHERE (%(txn_id)s::text IS NULL OR areq.threedsservertransid = %(txn_id)s::text)
-  AND areq.messagedatetime >= %(date_from)s::text
-  AND (%(date_to)s::text IS NULL OR areq.messagedatetime <= %(date_to)s::text)
-ORDER BY 1
+ORDER BY areq_messagedatetime

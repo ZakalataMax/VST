@@ -23,6 +23,7 @@ JSON_FIELD_MAP = {
     "acctNumber": "acct_number",
     "acquirerBIN": "acquirer_bin",
     "browserIP": "browser_ip",
+    "browserUserAgent": "browser_user_agent",
     "errorCode": "error_code",
 }
 

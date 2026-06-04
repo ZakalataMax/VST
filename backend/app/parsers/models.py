@@ -25,6 +25,7 @@ CSV_COLUMNS = [
     "acctNumber",
     "acquirerBIN",
     "browserIP",
+    "browserUserAgent",
     "errorCode",
     "isChallengeExpired",
     "oobResultStatus",
@@ -81,6 +82,7 @@ class MessageRow:
     acct_number: str = ""
     acquirer_bin: str = ""
     browser_ip: str = ""
+    browser_user_agent: str = ""
     error_code: str = ""
     is_challenge_expired: str = ""
     oob_result_status: str = ""
@@ -117,6 +119,7 @@ class MessageRow:
             "acctNumber": self.acct_number,
             "acquirerBIN": self.acquirer_bin,
             "browserIP": self.browser_ip,
+            "browserUserAgent": self.browser_user_agent,
             "errorCode": self.error_code,
             "isChallengeExpired": self.is_challenge_expired,
             "oobResultStatus": self.oob_result_status,

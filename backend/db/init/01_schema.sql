@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS cust_acs_3dsmess (
     acctnumber TEXT,
     acquirerbin TEXT,
     browserip TEXT,
+    browseruseragent TEXT,
     errorcode TEXT,
     ischallengeexpired TEXT,
     oobresultstatus TEXT,
