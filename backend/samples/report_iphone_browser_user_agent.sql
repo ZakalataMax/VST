@@ -13,10 +13,11 @@ areq AS (
 ares AS (
     SELECT
         ds.threedsservertransid,
-        ds.transstatus,
-        ds.transstatusreason
+        (array_agg(ds.transstatus ORDER BY ds.messagedatetime DESC))[1] AS transstatus,
+        (array_agg(ds.transstatusreason ORDER BY ds.messagedatetime DESC))[1] AS transstatusreason
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'ARes'
+    GROUP BY ds.threedsservertransid
 ),
 cres AS (
     SELECT

@@ -10,10 +10,11 @@ areq AS (
 ares AS (
     SELECT
         ds.threedsservertransid,
-        ds.transstatus,
-        ds.transstatusreason
+        MAX(ds.transstatus) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS transstatus,
+        MAX(ds.transstatusreason) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS transstatusreason
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'ARes'
+    GROUP BY ds.threedsservertransid
 ),
 cres AS (
     SELECT
