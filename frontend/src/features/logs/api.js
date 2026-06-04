@@ -15,9 +15,9 @@ async function parseResponse(response) {
   return payload;
 }
 
-export async function uploadLogs(files) {
+export async function uploadLog(file) {
   const formData = new FormData();
-  files.forEach((file) => formData.append("files", file));
+  formData.append("files", file);
 
   const response = await fetch(`${UPLOAD_API_BASE_URL}/api/logs/upload`, {
     method: "POST",

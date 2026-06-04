@@ -8,6 +8,7 @@ import {
   CircularProgress,
   Collapse,
   IconButton,
+  LinearProgress,
   Stack,
   Typography,
   alpha,
@@ -19,13 +20,15 @@ import CloseIcon from "@mui/icons-material/Close";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchLogDays, fetchLogFiles, parseStoredLogs, runMerchantWindowTest, uploadLogs } from "./api";
+import { fetchLogDays, fetchLogFiles, parseStoredLogs, runMerchantWindowTest, uploadLog } from "./api";
 import {
   buildCoverageDays,
   buildFileNameFromQueue,
   getAcsNodeStyle,
   mergeQueueItems,
   resolveDownloadFileName,
+  groupQueueByDate,
+  sortLogFilesForUpload,
   validateQueuePairs,
 } from "./logUtils";
 
@@ -162,7 +165,7 @@ function SavedDayRow({ day, queueIds, onAddDay }) {
   );
 }
 
-function SavedLogsPanel({ days, queueIds, onAddDay, expanded, onToggle, loading }) {
+function SavedLogsPanel({ days, queueIds, onAddDay, expanded, onToggle, loading, refreshing }) {
   const theme = useTheme();
 
   return (
@@ -209,7 +212,8 @@ function SavedLogsPanel({ days, queueIds, onAddDay, expanded, onToggle, loading 
       </Stack>
 
       <Collapse in={expanded}>
-        {loading ? (
+        {refreshing ? <LinearProgress sx={{ height: 2 }} /> : null}
+        {loading && !days.length ? (
           <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1.5, py: 1.5 }}>
             <CircularProgress size={18} />
             <Typography variant="caption" color="text.secondary">
@@ -217,7 +221,7 @@ function SavedLogsPanel({ days, queueIds, onAddDay, expanded, onToggle, loading 
             </Typography>
           </Stack>
         ) : days.length > 0 ? (
-          <Box sx={{ px: 1.25, py: 1 }}>
+          <Box sx={{ px: 1.25, py: 1, opacity: refreshing ? 0.72 : 1, transition: "opacity 0.2s ease" }}>
             <Stack spacing={0.75}>
               {days.map((day) => (
                 <SavedDayRow key={day.date} day={day} queueIds={queueIds} onAddDay={onAddDay} />
@@ -251,23 +255,41 @@ export default function ParseImportSection({
   const [savedFiles, setSavedFiles] = useState([]);
   const [logDays, setLogDays] = useState([]);
   const [savedLoading, setSavedLoading] = useState(false);
+  const [savedRefreshing, setSavedRefreshing] = useState(false);
   const [savedExpanded, setSavedExpanded] = useState(true);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [parseProgress, setParseProgress] = useState(null);
+  const hasSavedDataRef = useRef(false);
 
   const queueIds = useMemo(() => new Set(queue.map((item) => item.id)), [queue]);
 
-  useEffect(() => {
-    setSavedLoading(true);
-    Promise.all([fetchLogFiles(), fetchLogDays()])
-      .then(([filesPayload, logDaysPayload]) => {
-        setSavedFiles(filesPayload.files || []);
-        setLogDays(logDaysPayload.days || []);
-      })
-      .catch(() => {
+  const reloadSavedData = useCallback(async () => {
+    const blockUi = !hasSavedDataRef.current;
+    if (blockUi) {
+      setSavedLoading(true);
+    } else {
+      setSavedRefreshing(true);
+    }
+    try {
+      const logDaysPayload = await fetchLogDays();
+      setLogDays(logDaysPayload.days || []);
+      const filesPayload = await fetchLogFiles();
+      setSavedFiles(filesPayload.files || []);
+      hasSavedDataRef.current = true;
+    } catch {
+      if (blockUi) {
         setSavedFiles([]);
         setLogDays([]);
-      })
-      .finally(() => setSavedLoading(false));
-  }, [logsRefreshKey]);
+      }
+    } finally {
+      setSavedLoading(false);
+      setSavedRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadSavedData();
+  }, [logsRefreshKey, reloadSavedData]);
 
   const savedDays = useMemo(() => buildCoverageDays(savedFiles, logDays, []), [savedFiles, logDays]);
 
@@ -276,15 +298,21 @@ export default function ParseImportSection({
       if (!incomingFiles.length) {
         return;
       }
+      const ordered = sortLogFilesForUpload(incomingFiles);
       setUploading(true);
       onError("");
       try {
-        await uploadLogs(incomingFiles);
-        onLogsUploaded();
+        for (let index = 0; index < ordered.length; index += 1) {
+          const file = ordered[index];
+          setUploadProgress({ current: index + 1, total: ordered.length, name: file.name });
+          await uploadLog(file);
+          onLogsUploaded();
+        }
       } catch (error) {
         onError(error.message || "Upload failed.");
       } finally {
         setUploading(false);
+        setUploadProgress(null);
       }
     },
     [onError, onLogsUploaded],
@@ -374,19 +402,30 @@ export default function ParseImportSection({
       return;
     }
 
+    const dayGroups = groupQueueByDate(queue);
     setParsing(true);
     onError("");
+    let lastPayload = null;
+    const savedCsvDays = [];
     try {
-      const payload = await parseStoredLogs(queue.map((item) => item.id));
-      const fallbackName = buildFileNameFromQueue(queue);
-      const finalName = resolveDownloadFileName(payload.fileName, fallbackName);
-      downloadCsvFile(payload.csv, finalName);
-
-      onParseComplete({ savedCsvDays: payload.savedCsvDays || [] });
+      for (let index = 0; index < dayGroups.length; index += 1) {
+        const [date, items] = dayGroups[index];
+        setParseProgress({ current: index + 1, total: dayGroups.length, date });
+        const payload = await parseStoredLogs(items.map((item) => item.id));
+        lastPayload = payload;
+        savedCsvDays.push(...(payload.savedCsvDays || []));
+        onParseComplete({ savedCsvDays: [...savedCsvDays] });
+      }
+      if (dayGroups.length === 1 && lastPayload?.csv) {
+        const fallbackName = buildFileNameFromQueue(queue);
+        const finalName = resolveDownloadFileName(lastPayload.fileName, fallbackName);
+        downloadCsvFile(lastPayload.csv, finalName);
+      }
     } catch (error) {
       onError(error.message || "Parse failed.");
     } finally {
       setParsing(false);
+      setParseProgress(null);
     }
   };
 
@@ -464,7 +503,19 @@ export default function ParseImportSection({
             expanded={savedExpanded}
             onToggle={() => setSavedExpanded((value) => !value)}
             loading={savedLoading}
+            refreshing={savedRefreshing}
           />
+
+          {uploadProgress ? (
+            <Typography variant="caption" color="text.secondary">
+              Uploading {uploadProgress.current}/{uploadProgress.total}: {uploadProgress.name}
+            </Typography>
+          ) : null}
+          {parseProgress ? (
+            <Typography variant="caption" color="text.secondary">
+              Parsing day {parseProgress.current}/{parseProgress.total}: {parseProgress.date}
+            </Typography>
+          ) : null}
 
           {queue.length > 0 && (
             <Box>
@@ -481,7 +532,15 @@ export default function ParseImportSection({
 
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
             <Button variant="contained" onClick={handleParse} disabled={busy || !queue.length}>
-              {parsing ? "Parsing..." : uploading ? "Uploading..." : "Parse"}
+              {parsing
+                ? parseProgress
+                  ? `Parsing ${parseProgress.current}/${parseProgress.total}...`
+                  : "Parsing..."
+                : uploading
+                  ? uploadProgress
+                    ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...`
+                    : "Uploading..."
+                  : "Parse"}
             </Button>
             <Button
               variant="outlined"

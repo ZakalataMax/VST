@@ -58,6 +58,21 @@ export function summarizeCoverage(coverageDays) {
   return { withLogs, withPair, complete, parsed, totalRows, totalDays: days.length };
 }
 
+export function sortLogFilesForUpload(files) {
+  return [...files].sort((left, right) => {
+    const leftDates = extractLogDatesFromNames([left.name]);
+    const rightDates = extractLogDatesFromNames([right.name]);
+    const leftDate = leftDates[0] || "";
+    const rightDate = rightDates[0] || "";
+    if (leftDate !== rightDate) {
+      return leftDate.localeCompare(rightDate);
+    }
+    const leftNode = detectAcsNode(left.name) === "acs2" ? 1 : 0;
+    const rightNode = detectAcsNode(right.name) === "acs2" ? 1 : 0;
+    return leftNode - rightNode;
+  });
+}
+
 export function detectAcsNode(fileName) {
   const lowered = fileName.toLowerCase();
   if (lowered.includes("acs1")) {
@@ -75,6 +90,24 @@ export function extractLogDatesFromNames(fileNames) {
       fileNames.flatMap((fileName) => [...fileName.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((match) => match[1])),
     ),
   ].sort();
+}
+
+export function groupQueueByDate(queueItems) {
+  const byDate = new Map();
+
+  for (const item of queueItems) {
+    const dateMatch = item.filename.match(/(\d{4}-\d{2}-\d{2})/);
+    const date = item.logDate || dateMatch?.[1];
+    if (!date) {
+      continue;
+    }
+    if (!byDate.has(date)) {
+      byDate.set(date, []);
+    }
+    byDate.get(date).push(item);
+  }
+
+  return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
 export function validateQueuePairs(queueItems) {

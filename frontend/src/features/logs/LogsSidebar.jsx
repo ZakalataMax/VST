@@ -167,6 +167,8 @@ export default function LogsSidebar({ open, onToggle, logsRefreshKey, csvRefresh
   const [logDays, setLogDays] = useState([]);
   const [csvDays, setCsvDays] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const hasLoadedRef = useRef(false);
   const daysScrollRef = useRef(null);
 
   const scrollDaysToTop = () => {
@@ -174,19 +176,49 @@ export default function LogsSidebar({ open, onToggle, logsRefreshKey, csvRefresh
   };
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchLogFiles(), fetchLogDays(), fetchCsvDays()])
-      .then(([filesPayload, logDaysPayload, csvDaysPayload]) => {
-        setSavedFiles(filesPayload.files || []);
+    const blockUi = !hasLoadedRef.current;
+    if (blockUi) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
+    let cancelled = false;
+
+    fetchLogDays()
+      .then((logDaysPayload) => {
+        if (cancelled) {
+          return null;
+        }
         setLogDays(logDaysPayload.days || []);
+        return Promise.all([fetchLogFiles(), fetchCsvDays()]);
+      })
+      .then((rest) => {
+        if (cancelled || !rest) {
+          return;
+        }
+        const [filesPayload, csvDaysPayload] = rest;
+        setSavedFiles(filesPayload.files || []);
         setCsvDays(csvDaysPayload.days || []);
+        hasLoadedRef.current = true;
       })
       .catch(() => {
-        setSavedFiles([]);
-        setLogDays([]);
-        setCsvDays([]);
+        if (!cancelled && blockUi) {
+          setSavedFiles([]);
+          setLogDays([]);
+          setCsvDays([]);
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [logsRefreshKey, csvRefreshKey]);
 
   const coverageDays = useMemo(
@@ -267,12 +299,12 @@ export default function LogsSidebar({ open, onToggle, logsRefreshKey, csvRefresh
         </Tooltip>
       </Stack>
 
-      {loading && (
+      {(loading || refreshing) && (
         <LinearProgress sx={{ flexShrink: 0, height: 2, bgcolor: alpha(theme.palette.primary.main, 0.08) }} />
       )}
 
       <Box ref={daysScrollRef} sx={{ flex: 1, minHeight: 0, height: 0, ...scrollSx, px: 2, pb: 2 }}>
-        {loading ? (
+        {loading && !coverageDays.length ? (
           <PanelLoader />
         ) : coverageDays.length ? (
           <Stack spacing={1}>
