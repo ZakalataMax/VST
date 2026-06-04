@@ -37,11 +37,18 @@ def normalize_date_to(value: str | None) -> str | None:
     return trimmed
 
 
+def _strip_sql_string_literals(sql: str) -> str:
+    return re.sub(r"'(?:''|[^'])*'", "''", sql)
+
+
 def validate_custom_sql(sql: str) -> None:
-    cleaned = sql.strip().rstrip(";")
+    cleaned = sql.strip()
+    while cleaned.endswith(";"):
+        cleaned = cleaned[:-1].rstrip()
     if not cleaned:
         raise ValueError("SQL query is empty.")
-    if ";" in cleaned:
+    without_strings = _strip_sql_string_literals(cleaned)
+    if ";" in without_strings:
         raise ValueError("Only a single SQL statement is allowed.")
     if FORBIDDEN_SQL.search(cleaned):
         raise ValueError("Only SELECT queries are allowed.")

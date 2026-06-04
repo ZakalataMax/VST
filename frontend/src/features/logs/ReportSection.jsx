@@ -250,7 +250,14 @@ export default function ReportSection({
   const buildReportBody = useCallback(
     (nextOffset = 0) => {
       if (useCustomSql) {
-        return { mode: "custom", sql: customSql, limit: CHUNK_SIZE, offset: nextOffset };
+        return {
+          mode: "custom",
+          sql: customSql,
+          dateFrom: dateFrom.trim() || null,
+          dateTo: dateTo.trim() || null,
+          limit: CHUNK_SIZE,
+          offset: nextOffset,
+        };
       }
       if (useTxnId) {
         return {

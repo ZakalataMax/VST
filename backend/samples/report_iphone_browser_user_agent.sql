@@ -150,4 +150,6 @@ LEFT JOIN ares ON areq.threedsservertransid = ares.threedsservertransid
 LEFT JOIN cres ON areq.threedsservertransid = cres.threedsservertransid
 LEFT JOIN timeline ON areq.threedsservertransid = timeline.threedsservertransid
 LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
+WHERE areq.messagedatetime >= '2026-06-03 00:00:00.000'
+  AND areq.messagedatetime <= '2026-06-03 23:59:59.999'
 ORDER BY areq_messagedatetime

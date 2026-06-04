@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.paths import get_csv_storage_dir, get_report_output_dir
-from app.services.report import run_report_query
+from app.services.report import run_report_query, validate_custom_sql
 from tests.conftest import SAMPLE_TXN_ID
 
 client = TestClient(app)
@@ -41,6 +41,10 @@ def test_report_by_txn_id_returns_single_row(data_dirs, sample_csv_text: str) ->
 
     assert result.row_count == 1
     assert result.rows[0]["threedsservertransid"] == SAMPLE_TXN_ID
+
+
+def test_custom_sql_allows_trailing_semicolon() -> None:
+    validate_custom_sql("WITH x AS (SELECT 1 AS n) SELECT n FROM x;")
 
 
 def test_custom_sql_rejects_drop(data_dirs, sample_csv_text: str) -> None:
