@@ -73,6 +73,17 @@ def test_report_one_row_per_areq_with_multiple_ares(data_dirs) -> None:
     assert result.rows[0]["ares_status"] == "ARES: R+NULL"
 
 
+def test_report_custom_accepts_date_range_with_missing_csv_days(data_dirs, sample_csv_text: str) -> None:
+    _write_day_csv(sample_csv_text, day="2026-05-27")
+    _write_day_csv(sample_csv_text, day="2026-06-03")
+    result = run_report_query(
+        mode="date",
+        date_from="2026-05-27",
+        date_to="2026-06-03",
+    )
+    assert "areq_messagedatetime" in result.columns
+
+
 def test_custom_sql_allows_trailing_semicolon() -> None:
     validate_custom_sql("WITH x AS (SELECT 1 AS n) SELECT n FROM x;")
 

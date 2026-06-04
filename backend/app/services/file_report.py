@@ -20,11 +20,17 @@ from app.services.report import (
 )
 
 DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+SQL_FILTER_DATE_PATTERN = re.compile(
+    r"areq\.messagedatetime\s*>=\s*'(\d{4}-\d{2}-\d{2})",
+    re.IGNORECASE,
+)
 
 
 def _iter_dates(date_from: str, date_to: str | None) -> list[str]:
-    start = date.fromisoformat(date_from[:10])
-    end = date.fromisoformat((date_to or date_from)[:10])
+    from_day = normalize_date_from(date_from)[:10]
+    to_day = normalize_date_to(date_to or date_from)[:10] if date_to or date_from else from_day
+    start = date.fromisoformat(from_day)
+    end = date.fromisoformat(to_day)
     if end < start:
         raise ValueError("dateTo must be on or after dateFrom.")
 
@@ -34,6 +40,31 @@ def _iter_dates(date_from: str, date_to: str | None) -> list[str]:
         dates.append(current.isoformat())
         current += timedelta(days=1)
     return dates
+
+
+def _extract_sql_filter_dates(sql: str) -> list[str]:
+    return sorted({match.group(1) for match in SQL_FILTER_DATE_PATTERN.finditer(sql)})
+
+
+def _resolve_csv_paths_for_report(
+    *,
+    mode: str,
+    date_from: str | None,
+    date_to: str | None,
+    sql: str | None,
+) -> list[Path]:
+    dates: list[str] = []
+    if date_from and date_from.strip():
+        dates = _iter_dates(date_from, date_to)
+
+    if mode == "custom" and sql:
+        sql_dates = _extract_sql_filter_dates(sql)
+        if sql_dates:
+            dates = sorted(set(dates) | set(sql_dates))
+
+    if dates:
+        return resolve_csv_paths_for_dates(dates)
+    return list_all_csv_paths()
 
 
 def _csv_header_columns(csv_paths: list[Path]) -> set[str]:
@@ -121,10 +152,12 @@ def run_report_query(
         if not sql:
             raise ValueError("Custom mode requires sql.")
         validate_custom_sql(sql)
-        if date_from and date_from.strip():
-            csv_paths = resolve_csv_paths_for_dates(_iter_dates(date_from, date_to))
-        else:
-            csv_paths = list_all_csv_paths()
+        csv_paths = _resolve_csv_paths_for_report(
+            mode=mode,
+            date_from=date_from,
+            date_to=date_to,
+            sql=sql,
+        )
         report_sql = sql.strip().rstrip(";")
         params: tuple = ()
     elif mode == "txnId":
@@ -132,12 +165,12 @@ def run_report_query(
             raise ValueError("Transaction ID is required.")
         normalized_from = normalize_date_from(date_from or "1970-01-01")
         normalized_to = normalize_date_to(date_to)
-        if date_from and date_from.strip():
-            csv_paths = resolve_csv_paths_for_dates(
-                _iter_dates(normalized_from[:10], normalized_to[:10] if normalized_to else normalized_from[:10])
-            )
-        else:
-            csv_paths = list_all_csv_paths()
+        csv_paths = _resolve_csv_paths_for_report(
+            mode=mode,
+            date_from=normalized_from if date_from and date_from.strip() else None,
+            date_to=normalized_to,
+            sql=None,
+        )
         report_sql = _adapt_report_sql_for_duckdb(load_report_query_sql())
         params = _report_params(normalized_from, normalized_to, txn_id.strip())
     elif mode == "date":
@@ -145,8 +178,11 @@ def run_report_query(
             raise ValueError("dateFrom is required.")
         normalized_from = normalize_date_from(date_from)
         normalized_to = normalize_date_to(date_to)
-        csv_paths = resolve_csv_paths_for_dates(
-            _iter_dates(normalized_from[:10], normalized_to[:10] if normalized_to else normalized_from[:10])
+        csv_paths = _resolve_csv_paths_for_report(
+            mode=mode,
+            date_from=normalized_from,
+            date_to=normalized_to,
+            sql=None,
         )
         report_sql = _adapt_report_sql_for_duckdb(load_report_query_sql())
         params = _report_params(normalized_from, normalized_to, None)

@@ -8,7 +8,7 @@ areq AS (
         ds.browseruseragent
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'AReq'
-      AND ds.browseruseragent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+      AND ds.browseruseragent LIKE '%iPhone OS 15_8_7%'
 ),
 ares AS (
     SELECT

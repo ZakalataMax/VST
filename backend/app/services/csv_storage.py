@@ -184,8 +184,10 @@ def resolve_csv_paths_for_dates(dates: list[str]) -> list[Path]:
         else:
             missing.append(day)
 
-    if missing:
-        raise ValueError(f"No CSV for date(s): {', '.join(missing)}")
+    if not paths:
+        if missing:
+            raise ValueError(f"No CSV for date(s): {', '.join(missing)}")
+        raise ValueError("No parsed CSV files found.")
 
     return paths
 
