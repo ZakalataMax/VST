@@ -45,3 +45,35 @@ export async function runReport(body) {
   });
   return parseResponse(response);
 }
+
+export async function exportReport(body) {
+  const response = await fetch(`${API_BASE_URL}/api/report/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return parseResponse(response);
+}
+
+export async function downloadReportExport(fileName) {
+  const response = await fetch(`${API_BASE_URL}/api/report/export/${encodeURIComponent(fileName)}`);
+  if (!response.ok) {
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    const message = payload?.detail || "Download failed.";
+    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName || "report-full.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}

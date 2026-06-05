@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  LinearProgress,
   Stack,
   Table,
   TableBody,
@@ -25,8 +26,7 @@ import {
   alpha,
   useTheme,
 } from "@mui/material";
-import { fetchCsvDays, fetchReportTemplate, runReport, summarizeCsvDays } from "../report/api";
-import { downloadResultsCsv } from "./reportCsv";
+import { downloadReportExport, exportReport, fetchCsvDays, fetchReportTemplate, runReport, summarizeCsvDays } from "../report/api";
 import { scrollSx } from "../../theme/scrollStyles";
 
 const CHUNK_SIZE = 100;
@@ -201,7 +201,9 @@ export default function ReportSection({
   const [customSqlLoaded, setCustomSqlLoaded] = useState(false);
   const [columns, setColumns] = useState([]);
   const [rows, setRows] = useState([]);
+  const [totalRowCount, setTotalRowCount] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [exportProgress, setExportProgress] = useState(null);
 
   const scrollRef = useRef(null);
   const sentinelRef = useRef(null);
@@ -280,6 +282,30 @@ export default function ReportSection({
     [customSql, dateFrom, dateTo, txnId, useCustomSql, useTxnId],
   );
 
+  const buildExportBody = useCallback(() => {
+    const body = buildReportBody(0);
+    return {
+      mode: body.mode,
+      dateFrom: body.dateFrom,
+      dateTo: body.dateTo,
+      txnId: body.txnId,
+      sql: body.sql,
+    };
+  }, [buildReportBody]);
+
+  const validateReportInput = useCallback(() => {
+    if (useCustomSql && !customSql.trim()) {
+      return "Custom SQL is empty.";
+    }
+    if (useTxnId && !txnId.trim()) {
+      return "Transaction ID is required.";
+    }
+    if (!useCustomSql && !useTxnId && !dateFrom.trim()) {
+      return "Date from is required.";
+    }
+    return null;
+  }, [customSql, dateFrom, txnId, useCustomSql, useTxnId]);
+
   queryRef.current = buildReportBody;
 
   const fetchChunk = useCallback(async (nextOffset) => {
@@ -312,6 +338,7 @@ export default function ReportSection({
       setRows((current) => [...current, ...(payload.rows || [])]);
       const chunkLength = (payload.rows || []).length;
       const total = payload.rowCount ?? chunkLength;
+      setTotalRowCount(total);
       const more = nextOffset + chunkLength < total;
       setHasMore(more);
       if (more) {
@@ -355,16 +382,9 @@ export default function ReportSection({
   };
 
   const handleRunReport = async () => {
-    if (useCustomSql && !customSql.trim()) {
-      onError("Custom SQL is empty.");
-      return;
-    }
-    if (useTxnId && !txnId.trim()) {
-      onError("Transaction ID is required.");
-      return;
-    }
-    if (!useCustomSql && !useTxnId && !dateFrom.trim()) {
-      onError("Date from is required.");
+    const validationError = validateReportInput();
+    if (validationError) {
+      onError(validationError);
       return;
     }
 
@@ -377,6 +397,7 @@ export default function ReportSection({
       setRows(payload.rows || []);
       const chunkLength = (payload.rows || []).length;
       const total = payload.rowCount ?? chunkLength;
+      setTotalRowCount(total);
       const more = chunkLength < total;
       setHasMore(more);
       if (more) {
@@ -386,6 +407,7 @@ export default function ReportSection({
       onError(error.message || "Report failed.");
       setColumns([]);
       setRows([]);
+      setTotalRowCount(0);
       setHasMore(false);
     } finally {
       setReportLoading(false);
@@ -393,28 +415,40 @@ export default function ReportSection({
   };
 
   const handleExportAll = async () => {
-    if (!columns.length) {
+    const validationError = validateReportInput();
+    if (validationError) {
+      onError(validationError);
       return;
     }
+
     setExportingAll(true);
     onError("");
+    setExportProgress({
+      phase: "building",
+      loaded: 0,
+      total: totalRowCount || null,
+      message: "Building report on server (large ranges may take several minutes)...",
+    });
     try {
-      let collected = [...rows];
-      let offset = collected.length;
-      while (true) {
-        const payload = await fetchChunk(offset);
-        if (!payload.rows?.length) {
-          break;
-        }
-        collected = [...collected, ...payload.rows];
-        offset = collected.length;
-        if (payload.rows.length < CHUNK_SIZE) {
-          break;
-        }
-      }
-      downloadResultsCsv(columns, collected, "report-full.csv");
+      const payload = await exportReport(buildExportBody());
+      const rowCount = payload.rowCount ?? 0;
+      setTotalRowCount(rowCount);
+      setExportProgress({
+        phase: "downloading",
+        loaded: rowCount,
+        total: rowCount,
+        message: `Downloading ${rowCount.toLocaleString()} rows...`,
+      });
+      await downloadReportExport(payload.fileName || "report-full.csv");
+      setExportProgress({
+        phase: "done",
+        loaded: rowCount,
+        total: rowCount,
+        message: `Export complete: ${rowCount.toLocaleString()} rows saved as ${payload.fileName}`,
+      });
     } catch (error) {
       onError(error.message || "Export failed.");
+      setExportProgress(null);
     } finally {
       setExportingAll(false);
     }
@@ -531,12 +565,37 @@ export default function ReportSection({
                 {reportLoading ? "Running..." : "Run report"}
               </Button>
               {reportLoading && <CircularProgress size={22} />}
-              {rows.length > 0 && (
-                <Button variant="outlined" onClick={handleExportAll} disabled={exportingAll || reportLoading}>
-                  {exportingAll ? "Exporting..." : "Export full CSV"}
-                </Button>
-              )}
+              <Button variant="outlined" onClick={handleExportAll} disabled={exportingAll || reportLoading}>
+                {exportingAll ? "Exporting..." : "Export full CSV"}
+              </Button>
+              {exportingAll && <CircularProgress size={22} />}
             </Stack>
+
+            {exportProgress ? (
+              <Box>
+                <LinearProgress
+                  variant={exportProgress.phase === "building" ? "indeterminate" : "determinate"}
+                  value={
+                    exportProgress.total
+                      ? Math.min(100, (exportProgress.loaded / exportProgress.total) * 100)
+                      : 100
+                  }
+                  sx={{ mb: 0.75, height: 6, borderRadius: 1 }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {exportProgress.message}
+                </Typography>
+              </Box>
+            ) : null}
+
+            {totalRowCount > 0 ? (
+              <Typography variant="caption" color="text.secondary">
+                Total rows: {totalRowCount.toLocaleString()}
+                {rows.length > 0 && rows.length < totalRowCount
+                  ? ` · showing ${rows.length.toLocaleString()} in table (scroll for more)`
+                  : ""}
+              </Typography>
+            ) : null}
         </Stack>
 
         {rows.length > 0 && (

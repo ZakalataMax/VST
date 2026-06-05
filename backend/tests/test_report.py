@@ -34,7 +34,18 @@ def test_report_by_date_returns_expected_columns(data_dirs, sample_csv_text: str
     assert "txn_result" in result.columns
     assert "txn_timeline" in result.columns
     assert "browser_user_agent" in result.columns
-    assert list(get_report_output_dir().glob("report-*.csv"))
+
+
+def test_report_export_writes_csv_file(data_dirs, sample_csv_text: str) -> None:
+    _write_day_csv(sample_csv_text)
+    response = client.post(
+        "/api/report/export",
+        json={"mode": "date", "dateFrom": "2026-05-27", "dateTo": "2026-05-27"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["fileName"].startswith("report-")
+    assert (get_report_output_dir() / payload["fileName"]).is_file()
 
 
 def test_report_by_txn_id_returns_single_row(data_dirs, sample_csv_text: str) -> None:

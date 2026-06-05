@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import csv
 import re
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
 
-from app.parsers.csv_writer import CSV_DELIMITER, dict_rows_to_csv, duckdb_read_csv_delim, save_dict_rows_csv
+from app.parsers.csv_writer import CSV_DELIMITER, duckdb_read_csv_delim, save_dict_rows_csv
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import CSV_TO_DB, list_all_csv_paths, resolve_csv_paths_for_dates
 from app.services.report import (
@@ -135,19 +136,22 @@ def _save_report_csv(columns: list[str], rows: list[dict], output_path: Path) ->
     save_dict_rows_csv(output_path, columns, rows)
 
 
-def run_report_query(
+@dataclass
+class ReportExportResult:
+    columns: list[str]
+    row_count: int
+    file_name: str
+    output_path: Path
+
+
+def _resolve_report_query(
     *,
     mode: str,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    txn_id: str | None = None,
-    sql: str | None = None,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = 0,
-) -> ReportResult:
-    limit = min(max(limit, 1), MAX_LIMIT)
-    offset = max(offset, 0)
-
+    date_from: str | None,
+    date_to: str | None,
+    txn_id: str | None,
+    sql: str | None,
+) -> tuple[list[Path], str, tuple]:
     if mode == "custom":
         if not sql:
             raise ValueError("Custom mode requires sql.")
@@ -189,41 +193,111 @@ def run_report_query(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
+    return csv_paths, report_sql, params
+
+
+def _load_report_result(
+    connection: duckdb.DuckDBPyConnection,
+    csv_paths: list[Path],
+    report_sql: str,
+    params: tuple,
+) -> list[str]:
+    connection.execute(_duckdb_view_sql(csv_paths))
+    connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", params)
+    return [
+        row[0]
+        for row in connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'report_result' ORDER BY ordinal_position"
+        ).fetchall()
+    ]
+
+
+def run_report_query(
+    *,
+    mode: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    txn_id: str | None = None,
+    sql: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+    offset: int = 0,
+) -> ReportResult:
+    limit = min(max(limit, 1), MAX_LIMIT)
+    offset = max(offset, 0)
+
+    csv_paths, report_sql, params = _resolve_report_query(
+        mode=mode,
+        date_from=date_from,
+        date_to=date_to,
+        txn_id=txn_id,
+        sql=sql,
+    )
+
     connection = duckdb.connect()
     try:
-        connection.execute(_duckdb_view_sql(csv_paths))
-        connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", params)
-        columns = [
-            row[0]
-            for row in connection.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'report_result' ORDER BY ordinal_position"
-            ).fetchall()
-        ]
+        columns = _load_report_result(connection, csv_paths, report_sql, params)
         total = connection.execute("SELECT COUNT(*) FROM report_result").fetchone()[0]
-
-        all_rows_raw = connection.execute("SELECT * FROM report_result ORDER BY 1").fetchall()
-        all_rows = [
+        page_rows_raw = connection.execute(
+            "SELECT * FROM report_result ORDER BY 1 LIMIT ? OFFSET ?",
+            [limit, offset],
+        ).fetchall()
+        page_rows = [
             {col: ("" if value is None else str(value)) for col, value in zip(columns, row)}
-            for row in all_rows_raw
+            for row in page_rows_raw
         ]
-
-        output_name = _build_report_output_name(
-            mode=mode,
-            date_from=date_from,
-            date_to=date_to,
-            txn_id=txn_id,
-        )
-        output_path = get_report_output_dir() / output_name
-        _save_report_csv(columns, all_rows, output_path)
-
-        page_rows = all_rows[offset : offset + limit]
         return ReportResult(
             columns=columns,
             rows=page_rows,
             row_count=total,
             limit=limit,
             offset=offset,
+        )
+    finally:
+        connection.close()
+
+
+def export_report_csv(
+    *,
+    mode: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    txn_id: str | None = None,
+    sql: str | None = None,
+) -> ReportExportResult:
+    csv_paths, report_sql, params = _resolve_report_query(
+        mode=mode,
+        date_from=date_from,
+        date_to=date_to,
+        txn_id=txn_id,
+        sql=sql,
+    )
+    output_name = _build_report_output_name(
+        mode=mode,
+        date_from=date_from,
+        date_to=date_to,
+        txn_id=txn_id,
+    )
+    output_path = get_report_output_dir() / output_name
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    connection = duckdb.connect()
+    try:
+        columns = _load_report_result(connection, csv_paths, report_sql, params)
+        total = connection.execute("SELECT COUNT(*) FROM report_result").fetchone()[0]
+        delim = duckdb_read_csv_delim()
+        connection.execute(
+            f"""
+            COPY (SELECT * FROM report_result ORDER BY 1)
+            TO '{output_path.as_posix()}'
+            (HEADER, DELIMITER '{delim}')
+            """
+        )
+        return ReportExportResult(
+            columns=columns,
+            row_count=total,
+            file_name=output_name,
+            output_path=output_path,
         )
     finally:
         connection.close()
