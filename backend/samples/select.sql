@@ -3,15 +3,16 @@ areq AS (
     SELECT
         ds.messagedatetime,
         ds.threedsservertransid,
-        ds.ACCTNUMBER
+        ds.acctnumber,
+        ds.browseruseragent
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'AReq'
 ),
 ares AS (
     SELECT
         ds.threedsservertransid,
-        MAX(ds.transstatus) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS transstatus,
-        MAX(ds.transstatusreason) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS transstatusreason
+        (array_agg(ds.transstatus ORDER BY ds.messagedatetime DESC))[1] AS transstatus,
+        (array_agg(ds.transstatusreason ORDER BY ds.messagedatetime DESC))[1] AS transstatusreason
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'ARes'
     GROUP BY ds.threedsservertransid
@@ -19,8 +20,8 @@ ares AS (
 cres AS (
     SELECT
         ds.threedsservertransid,
-        MAX(ds.transstatus) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS transstatus,
-        MAX(ds.transstatusreason) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS transstatusreason
+        (array_agg(ds.transstatus ORDER BY ds.messagedatetime DESC))[1] AS transstatus,
+        (array_agg(ds.transstatusreason ORDER BY ds.messagedatetime DESC))[1] AS transstatusreason
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'CRes'
     GROUP BY ds.threedsservertransid
@@ -28,7 +29,7 @@ cres AS (
 erro AS (
     SELECT
         ds.threedsservertransid,
-        MAX(ds.errorcode) KEEP (DENSE_RANK LAST ORDER BY ds.messagedatetime) AS errorcode
+        (array_agg(ds.errorcode ORDER BY ds.messagedatetime DESC))[1] AS errorcode
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'Erro'
     GROUP BY ds.threedsservertransid
@@ -65,14 +66,14 @@ event_token AS (
             WHEN e.messagetype = 'OobInitResponse' THEN 'OobInitResp'
             WHEN e.messagetype = 'OobResultRequest'
             THEN 'OobResultReq(' || e.oobresultstatus || '+' || e.oobresultmethod || ')'
-            WHEN e.messagetype = 'OobResult' AND NVL(e.messagedirection, 'In') = 'In'
+            WHEN e.messagetype = 'OobResult' AND COALESCE(e.messagedirection, 'In') = 'In'
             THEN 'OobResultReq(' || e.oobresultstatus || '+' || e.oobresultmethod || ')'
             WHEN e.messagetype = 'OobResultResponse' THEN 'OobResultResp'
             WHEN e.messagetype = 'OobResult' AND e.messagedirection = 'Out' THEN 'OobResultResp'
             WHEN e.messagetype = 'ChallengeExpiring' THEN 'Challenge expired'
             WHEN e.messagetype = 'RReq'
             THEN 'RReq('
-                || NVL(e.transstatus, 'NULL') || '+' || NVL(e.transstatusreason, 'NULL')
+                || COALESCE(e.transstatus, 'NULL') || '+' || COALESCE(e.transstatusreason, 'NULL')
                 || CASE
                      WHEN e.authenticationmethod IS NOT NULL
                      THEN ', AuthMethod=' || e.authenticationmethod
@@ -85,7 +86,7 @@ event_token AS (
                    END
                 || ')'
             WHEN e.messagetype = 'RRes' THEN 'RRes'
-            WHEN e.messagetype = 'CRes' THEN 'CRes(' || e.transstatus || ')'
+            WHEN e.messagetype = 'CRes' THEN 'CRes(' || COALESCE(e.transstatus, '') || ')'
             WHEN e.messagetype = 'ChallengeAnswer'
             THEN 'ChAnswerRequest(submit=' || e.challengesubmit || ')'
             WHEN e.messagetype = 'Erro' AND e.errorcode IS NOT NULL
@@ -111,23 +112,24 @@ event_token AS (
 timeline AS (
     SELECT
         et.threedsservertransid,
-        LISTAGG(et.token, ' ') WITHIN GROUP (ORDER BY et.messagedatetime, et.tie_sort) AS txn_timeline
+        string_agg(et.token, ' ' ORDER BY et.messagedatetime, et.tie_sort) AS txn_timeline
     FROM event_token et
     WHERE et.token IS NOT NULL
     GROUP BY et.threedsservertransid
 )
 SELECT
     areq.messagedatetime AS areq_messagedatetime,
-    substr(areq.messagedatetime, 1, 10) AS areq_messagedate,
+    substr(areq.messagedatetime, 9, 2) || '_' || substr(areq.messagedatetime, 6, 2) || '_' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
     areq.threedsservertransid,
+    areq.browseruseragent AS browser_user_agent,
     CASE
-        WHEN areq.ACCTNUMBER LIKE '4%' THEN 'Visa'
-        WHEN areq.ACCTNUMBER LIKE '5%' THEN 'MC'
+        WHEN areq.acctnumber LIKE '4%' THEN 'Visa'
+        WHEN areq.acctnumber LIKE '5%' THEN 'MC'
     END AS card_scheme,
-    'ARES: ' || NVL(ares.transstatus, 'NULL')
-        || '+' || NVL(ares.transstatusreason, 'NULL') AS ares_status,
-    'CRES: ' || NVL(cres.transstatus, 'NULL')
-        || '+' || NVL(cres.transstatusreason, 'NULL') AS final_cres_status,
+    'ARES: ' || COALESCE(ares.transstatus, 'NULL')
+        || '+' || COALESCE(ares.transstatusreason, 'NULL') AS ares_status,
+    'CRES: ' || COALESCE(cres.transstatus, 'NULL')
+        || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
     CASE
         WHEN timeline.txn_timeline LIKE '%Erro(%' THEN 'Erro'
         WHEN timeline.txn_timeline LIKE '%Challenge expired%' THEN 'Timeout'
@@ -140,13 +142,16 @@ SELECT
     END AS txn_result,
     timeline.txn_timeline,
     erro.errorcode,
-    areq.ACCTNUMBER AS acct_number
+    areq.acctnumber AS acct_number
 FROM areq
 LEFT JOIN ares ON areq.threedsservertransid = ares.threedsservertransid
 LEFT JOIN cres ON areq.threedsservertransid = cres.threedsservertransid
 LEFT JOIN timeline ON areq.threedsservertransid = timeline.threedsservertransid
 LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
-WHERE
-    areq.messagedatetime >= '2026-05-22 00:00:00.000'
---    and areq.THREEDSSERVERTRANSID = '00139c7d-d497-48cb-b642-9c7ae38a8c02'
-ORDER BY 1;
+WHERE areq.messagedatetime >= '2026-05-23 00:00:00.000'
+  AND timeline.txn_timeline IN (
+    'AReq ARes(C) CReq OobInitReq OobInitResp Challenge expired RReq(N+14, AuthMethod=09, ChCancel=04) RRes CRes(N)',
+    'AReq ARes(C) CReq OobInitReq OobInitResp OobResultReq(Y+BIOMETRICS) OobResultResp Challenge expired RReq(N+14, AuthMethod=07, ChCancel=04) RRes CRes(N)',
+    'AReq ARes(C) Challenge expired RReq(N+14, AuthMethod=09, ChCancel=05) RRes'
+  )
+ORDER BY areq_messagedatetime

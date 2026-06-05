@@ -121,7 +121,7 @@ timeline AS (
 )
 SELECT
     areq.messagedatetime AS areq_messagedatetime,
-    substr(areq.messagedatetime, 1, 10) AS areq_messagedate,
+    substr(areq.messagedatetime, 9, 2) || '_' || substr(areq.messagedatetime, 6, 2) || '_' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
     areq.threedsservertransid,
     areq.browseruseragent AS browser_user_agent,
     CASE
