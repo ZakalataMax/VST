@@ -297,6 +297,16 @@ QListWidget::item:hover:!selected {{
     border-right: 1px solid {BORDER};
 }}
 
+#DayActionRow {{
+    background-color: rgba(255, 255, 255, 0.02);
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM};
+}}
+
+#DayActionRow:hover {{
+    border-color: rgba(124, 156, 255, 0.35);
+}}
+
 #DayCard {{
     background-color: rgba(255, 255, 255, 0.02);
     border: 1px solid {BORDER};
