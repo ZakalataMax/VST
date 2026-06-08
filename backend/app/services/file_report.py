@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+import uuid
+
 import duckdb
 
 from app.parsers.csv_writer import CSV_DELIMITER, duckdb_read_csv_delim, save_dict_rows_csv

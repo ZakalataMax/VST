@@ -9,6 +9,16 @@ block_cipher = None
 
 duckdb_datas, duckdb_binaries, duckdb_hidden = collect_all("duckdb")
 
+stdlib_hiddenimports = [
+    "uuid",
+    "_uuid",
+    "decimal",
+    "datetime",
+    "json",
+    "zlib",
+    "encodings.idna",
+]
+
 hiddenimports = [
     "desktop.main_window",
     "desktop.tabs.parser_tab",
@@ -20,6 +30,7 @@ hiddenimports = [
     "desktop.theme",
     "desktop.widgets.common",
     "desktop.widgets.coverage_sidebar",
+    "desktop.widgets.day_action_row",
     "app.parsers.acs_log_parser",
     "app.parsers.csv_writer",
     "app.parsers.field_mapping",
@@ -30,7 +41,7 @@ hiddenimports = [
     "app.services.csv_storage",
     "app.services.report",
     "app.paths",
-] + duckdb_hidden
+] + stdlib_hiddenimports + duckdb_hidden
 
 a = Analysis(
     [str(backend_dir / "desktop" / "__main__.py")],
@@ -43,8 +54,18 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
-    excludes=["pytest", "test", "tests"],
+    runtime_hooks=[str(backend_dir / "desktop" / "pyi_rth_preload.py")],
+    excludes=[
+        "pytest",
+        "test",
+        "tests",
+        "duckdb.experimental",
+        "duckdb.experimental.spark",
+        "duckdb.query_graph",
+        "duckdb.polars_io",
+        "duckdb.filesystem",
+        "duckdb.udf",
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
