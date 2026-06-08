@@ -1,58 +1,77 @@
 # VST Work Tools
 
-React frontend + FastAPI backend.
+Desktop app (PySide6) for ACS log parsing, daily CSV storage, and DuckDB reports.
 
-## Run
+## Windows executable
 
-**Docker (recommended)**
+From `backend/`:
 
-```bash
-docker compose up --build
+```bat
+build.bat
 ```
 
-- UI: http://localhost:5173
-- API: http://localhost:8000
+Or manually:
 
-**Local**
+```bash
+pip install -r requirements.txt pyinstaller
+pyinstaller vst.spec --noconfirm --clean
+```
+
+Output: `backend/dist/VST.exe` — single file, no Python install needed on the target PC.
+
+**Shortcut:** right-click `VST.exe` → *Send to* → *Desktop (create shortcut)*, or drag to the desktop while holding Alt.
+
+**Data:** logs, CSV, and exports are stored in `data/` **next to `VST.exe`** (created on first run). Put the exe in a permanent folder (e.g. `C:\Tools\VST\`) so data stays with it.
+
+Optional `.env` beside `VST.exe` can override `LOG_STORAGE_DIR`, `CSV_STORAGE_DIR`, `REPORT_OUTPUT_DIR`.
 
 ```bash
 cp backend/.env.example backend/.env
 
-cd backend && pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8000
-
-cd frontend && npm install && npm run dev
+cd backend
+pip install -r requirements.txt
+python -m desktop
 ```
 
-The Vite dev server proxies `/api` to the backend, so CORS issues are avoided when using `npm run dev`. Restart the frontend after changing `vite.config.js`.
-
-Large `.log` uploads can be slow through the Vite proxy. For faster uploads locally, copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_DIRECT_URL=http://127.0.0.1:8000` (backend CORS already allows this).
-
-## Data layout
-
-All runtime data is stored under `backend/data/` (gitignored):
+Data is stored under `backend/data/` (gitignored):
 
 - `logs/{date}/acs1.log`, `acs2.log` — uploaded ACS logs
 - `csv/{date}.csv` — parsed messages per calendar day
-- `csv_reports_final/` — report output CSV files
+- `csv_reports_final/` — exported report CSV files
 
-## Use
+Override paths via environment variables or `backend/.env`.
 
-### Parser tab
+## Parser tab
 
-Number formatting, duplicate checking, line splitting.
+Number formatting (plain or quoted for SQL) and duplicate checking on pasted lists.
 
-### Logs tab
+## Logs tab
 
-1. Upload ACS1 and ACS2 `.log` files (drag-and-drop or file picker).
-2. Add days to the parse queue from the Coverage sidebar.
-3. Click **Parse** — parses logs and saves daily CSV under `data/csv/`. Each date needs both ACS1 and ACS2. Parsed CSV includes `browserUserAgent` from AReq (re-parse days after schema changes).
-4. **Test 11–15 report** (one-off): group by **card + acquirerMerchantID**, window **11:00–15:00**, **≥2 txns**. Per txn, **last CRes** in `txn_timeline` (no CRes counts as N for the ratio). Pair qualifies when `count(CRes Y) * 3 < count(other outcomes)`. CSV includes only **txns with no CRes at all** from qualifying pairs (`acct_number`, `merchant_name`), sorted by time. Re-parse for `merchantName`. Saved to `data/csv_reports_final/`.
-5. Set a date range in Report and click **Run report**. Pick a day in Coverage to fill the range. Export full CSV from the table; a copy is saved under `data/csv_reports_final/`.
+1. **Upload** ACS1 and ACS2 `.log` files (multi-select).
+2. Select saved files and **Add to parse queue** (each date needs both ACS1 and ACS2).
+3. **Parse queue** — writes daily CSV under `data/csv/`. Re-parse after schema changes (e.g. `browserUserAgent`).
+4. Pick a day in **Coverage** to fill the report date range.
+5. **Run preview** loads the first 100 rows; **Load more** paginates. **Export CSV** writes the full report via DuckDB `COPY` to `data/csv_reports_final/`.
 
-### Report CLI
+### Custom SQL
+
+Enable **Custom SQL** to edit the query. On first enable, the template from `db/report_query.sql` is loaded (`%%` → `%`).
+
+- SQL with `%(date_from)s`, `%(date_to)s`, or `%(txn_id)s` — **From / To / Transaction ID** are bound at run time.
+- SQL with literal dates (e.g. `samples/select.sql`) — **From / To** still choose which CSV days are loaded; changing dates in the UI can rewrite literal `areq.messagedatetime >= 'YYYY-MM-DD'` filters in the editor.
+
+Use **Filter by transaction ID** for the default template in txn mode (without custom SQL).
+
+## Report CLI
 
 ```bash
 cd backend
 python scripts/build_report.py --mode date --date-from 2026-05-27 --date-to 2026-05-27
+```
+
+## Tests
+
+```bash
+cd backend
+pytest
 ```

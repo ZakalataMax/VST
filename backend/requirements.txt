@@ -1,6 +1,3 @@
-fastapi
-uvicorn
-python-dotenv
-python-multipart
 duckdb
 pytest
+PySide6

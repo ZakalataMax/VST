@@ -1,10 +1,24 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DB_DIR = ROOT_DIR / "db"
+
+def get_app_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+def get_bundle_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", get_app_root()))
+    return Path(__file__).resolve().parents[1]
+
+
+ROOT_DIR = get_app_root()
+DB_DIR = get_bundle_dir() / "db"
 
 
 def get_log_storage_dir() -> Path:

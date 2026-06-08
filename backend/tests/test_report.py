@@ -4,15 +4,12 @@ import csv
 import io
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
 from app.paths import get_csv_storage_dir, get_report_output_dir
 from app.parsers.models import CSV_COLUMNS
+from app.services.file_report import export_report_csv
 from app.services.report import run_report_query, validate_custom_sql
 from tests.conftest import SAMPLE_TXN_ID
-
-client = TestClient(app)
 
 
 def _write_day_csv(csv_text: str, day: str = "2026-05-27") -> None:
@@ -38,14 +35,13 @@ def test_report_by_date_returns_expected_columns(data_dirs, sample_csv_text: str
 
 def test_report_export_writes_csv_file(data_dirs, sample_csv_text: str) -> None:
     _write_day_csv(sample_csv_text)
-    response = client.post(
-        "/api/report/export",
-        json={"mode": "date", "dateFrom": "2026-05-27", "dateTo": "2026-05-27"},
+    result = export_report_csv(
+        mode="date",
+        date_from="2026-05-27",
+        date_to="2026-05-27",
     )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["fileName"].startswith("report-")
-    assert (get_report_output_dir() / payload["fileName"]).is_file()
+    assert result.file_name.startswith("report-")
+    assert (get_report_output_dir() / result.file_name).is_file()
 
 
 def test_report_by_txn_id_returns_single_row(data_dirs, sample_csv_text: str) -> None:
@@ -99,10 +95,23 @@ def test_custom_sql_allows_trailing_semicolon() -> None:
     validate_custom_sql("WITH x AS (SELECT 1 AS n) SELECT n FROM x;")
 
 
+def test_custom_sql_binds_date_placeholders(data_dirs, sample_csv_text: str) -> None:
+    _write_day_csv(sample_csv_text)
+    from app.paths import load_report_query_sql
+
+    sql = load_report_query_sql().replace("%%", "%")
+    result = run_report_query(
+        mode="custom",
+        sql=sql,
+        date_from="2026-05-27",
+        date_to="2026-05-27",
+        limit=500,
+    )
+    assert result.row_count > 0
+    assert "areq_messagedatetime" in result.columns
+
+
 def test_custom_sql_rejects_drop(data_dirs, sample_csv_text: str) -> None:
     _write_day_csv(sample_csv_text)
-    response = client.post(
-        "/api/report/run",
-        json={"mode": "custom", "sql": "DROP TABLE cust_acs_3dsmess"},
-    )
-    assert response.status_code == 400
+    with pytest.raises(ValueError, match="Only SELECT"):
+        validate_custom_sql("DROP TABLE cust_acs_3dsmess")

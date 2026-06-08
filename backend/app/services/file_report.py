@@ -144,6 +144,14 @@ class ReportExportResult:
     output_path: Path
 
 
+def _sql_has_report_placeholders(sql: str) -> bool:
+    return (
+        "%(date_from)s" in sql
+        or "%(date_to)s" in sql
+        or "%(txn_id)s" in sql
+    )
+
+
 def _resolve_report_query(
     *,
     mode: str,
@@ -163,7 +171,14 @@ def _resolve_report_query(
             sql=sql,
         )
         report_sql = sql.strip().rstrip(";")
-        params: tuple = ()
+        if _sql_has_report_placeholders(report_sql):
+            normalized_from = normalize_date_from(date_from or "1970-01-01")
+            normalized_to = normalize_date_to(date_to)
+            report_sql = _adapt_report_sql_for_duckdb(report_sql)
+            bound_txn = txn_id.strip() if txn_id and txn_id.strip() else None
+            params = _report_params(normalized_from, normalized_to, bound_txn)
+        else:
+            params = ()
     elif mode == "txnId":
         if not txn_id or not txn_id.strip():
             raise ValueError("Transaction ID is required.")

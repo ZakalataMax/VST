@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-import os
 import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import UploadFile
-
 from app.parsers.acs_log_parser import _detect_acs_node
 from app.paths import get_log_storage_dir
-
-_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
 
 @dataclass
@@ -99,49 +94,6 @@ def save_upload(filename: str, content: bytes) -> dict:
     meta_path = day_dir / f"{acs_node}.meta"
     meta_path.write_text(f"{filename}\n{datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
     record = _record_from_path(storage_dir, log_date, acs_node, filename)
-    return _record_to_dict(record)
-
-
-def save_upload_stream(upload: UploadFile, remaining_bytes: list[int]) -> dict:
-    filename = upload.filename or "uploaded.log"
-    log_date, acs_node = parse_log_filename(filename)
-    storage_dir = get_log_storage_dir()
-    day_dir = storage_dir / log_date
-    day_dir.mkdir(parents=True, exist_ok=True)
-    storage_path = day_dir / f"{acs_node}.log"
-    meta_path = day_dir / f"{acs_node}.meta"
-
-    written = 0
-    upload.file.seek(0)
-    try:
-        with storage_path.open("wb") as dest:
-            while True:
-                chunk = upload.file.read(_UPLOAD_CHUNK_BYTES)
-                if not chunk:
-                    break
-                written += len(chunk)
-                remaining_bytes[0] -= len(chunk)
-                if remaining_bytes[0] < 0:
-                    raise ValueError(
-                        f"Total upload exceeds {int(os.getenv('MAX_TOTAL_UPLOAD_MB', '500'))} MB."
-                    )
-                dest.write(chunk)
-    except Exception:
-        storage_path.unlink(missing_ok=True)
-        raise
-
-    meta_path.write_text(f"{filename}\n{datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
-    record = _record_from_path(storage_dir, log_date, acs_node, filename)
-    if record.file_size != written:
-        record = LogFileRecord(
-            id=record.id,
-            log_date=record.log_date,
-            acs_node=record.acs_node,
-            filename=record.filename,
-            file_size=written,
-            storage_path=record.storage_path,
-            uploaded_at=record.uploaded_at,
-        )
     return _record_to_dict(record)
 
 

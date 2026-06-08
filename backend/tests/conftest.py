@@ -30,6 +30,8 @@ def sample_csv_text() -> str:
     import csv
     import io
 
+    from app.parsers.csv_writer import CSV_DELIMITER
+
     with REFERENCE_CSV.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         fieldnames = reader.fieldnames or []
@@ -40,7 +42,12 @@ def sample_csv_text() -> str:
         ][:2000]
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
+    writer = csv.DictWriter(
+        output,
+        fieldnames=fieldnames,
+        delimiter=CSV_DELIMITER,
+        lineterminator="\n",
+    )
     writer.writeheader()
     writer.writerows(day_rows)
     return output.getvalue()
