@@ -8,6 +8,7 @@ backend_dir = Path(SPECPATH).resolve()
 block_cipher = None
 
 duckdb_datas, duckdb_binaries, duckdb_hidden = collect_all("duckdb")
+openpyxl_datas, openpyxl_binaries, openpyxl_hidden = collect_all("openpyxl")
 
 stdlib_hiddenimports = [
     "uuid",
@@ -30,7 +31,9 @@ hiddenimports = [
     "desktop.theme",
     "desktop.widgets.common",
     "desktop.widgets.coverage_sidebar",
-    "desktop.widgets.day_action_row",
+    "desktop.widgets.import_parse_panel",
+    "desktop.widgets.report_panel",
+    "desktop.report_table_utils",
     "app.parsers.acs_log_parser",
     "app.parsers.csv_writer",
     "app.parsers.field_mapping",
@@ -41,24 +44,22 @@ hiddenimports = [
     "app.services.csv_storage",
     "app.services.report",
     "app.paths",
-] + stdlib_hiddenimports + duckdb_hidden
+] + stdlib_hiddenimports + duckdb_hidden + openpyxl_hidden
 
 a = Analysis(
     [str(backend_dir / "desktop" / "__main__.py")],
     pathex=[str(backend_dir)],
-    binaries=duckdb_binaries,
+    binaries=duckdb_binaries + openpyxl_binaries,
     datas=[
         (str(backend_dir / "db" / "report_query.sql"), "db"),
     ]
-    + duckdb_datas,
+    + duckdb_datas
+    + openpyxl_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[str(backend_dir / "desktop" / "pyi_rth_preload.py")],
     excludes=[
-        "pytest",
-        "test",
-        "tests",
         "duckdb.experimental",
         "duckdb.experimental.spark",
         "duckdb.query_graph",

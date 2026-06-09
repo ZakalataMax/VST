@@ -13,7 +13,6 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("VST Work Tools")
-        self.resize(1360, 900)
         self.setMinimumSize(1024, 700)
 
         shell = QWidget()
@@ -42,7 +41,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     apply_theme(app)
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 

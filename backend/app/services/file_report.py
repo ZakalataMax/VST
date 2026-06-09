@@ -10,15 +10,20 @@ import uuid
 
 import duckdb
 
-from app.parsers.csv_writer import CSV_DELIMITER, duckdb_read_csv_delim, save_dict_rows_csv
+from app.parsers.csv_writer import CSV_DELIMITER, duckdb_read_csv_delim
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import CSV_TO_DB, list_all_csv_paths, resolve_csv_paths_for_dates
 from app.services.report import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     ReportResult,
+    PivotTable,
+    build_count_pivot,
+    default_pivot_fields,
+    format_report_cell_value,
     normalize_date_from,
     normalize_date_to,
+    pivot_table_to_rows,
     validate_custom_sql,
 )
 
@@ -31,7 +36,8 @@ SQL_FILTER_DATE_PATTERN = re.compile(
 
 def _iter_dates(date_from: str, date_to: str | None) -> list[str]:
     from_day = normalize_date_from(date_from)[:10]
-    to_day = normalize_date_to(date_to or date_from)[:10] if date_to or date_from else from_day
+    normalized_to = normalize_date_to(date_to or date_from) or normalize_date_from(date_from)
+    to_day = normalized_to[:10]
     start = date.fromisoformat(from_day)
     end = date.fromisoformat(to_day)
     if end < start:
@@ -126,16 +132,76 @@ def _build_report_output_name(
 ) -> str:
     if mode == "txnId" and txn_id:
         safe_txn = re.sub(r"[^0-9a-fA-F-]", "", txn_id.strip())
-        return f"report-txn-{safe_txn}.csv"
+        return f"report-txn-{safe_txn}.xlsx"
     from_day = (date_from or "unknown")[:10]
     to_day = (date_to or date_from or from_day)[:10]
     if from_day == to_day:
-        return f"report-{from_day}.csv"
-    return f"report-{from_day}-to-{to_day}.csv"
+        return f"report-{from_day}.xlsx"
+    return f"report-{from_day}-to-{to_day}.xlsx"
 
 
-def _save_report_csv(columns: list[str], rows: list[dict], output_path: Path) -> None:
-    save_dict_rows_csv(output_path, columns, rows)
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _fetch_report_pivot(
+    connection: duckdb.DuckDBPyConnection,
+    columns: list[str],
+    row_field: str | None,
+    col_field: str | None,
+) -> PivotTable | None:
+    resolved_row, resolved_col = default_pivot_fields(columns)
+    row_name = row_field or resolved_row
+    col_name = col_field or resolved_col
+    if not row_name or not col_name:
+        return None
+    if row_name not in columns or col_name not in columns:
+        raise ValueError(f"Pivot fields must exist in report columns: {row_name}, {col_name}")
+    agg_rows = connection.execute(
+        f"SELECT {_quote_ident(row_name)}, {_quote_ident(col_name)}, COUNT(*) "
+        f"FROM report_result GROUP BY 1, 2 ORDER BY 1, 2"
+    ).fetchall()
+    return build_count_pivot(
+        row_field=row_name,
+        col_field=col_name,
+        rows=[(row[0], row[1], int(row[2])) for row in agg_rows],
+    )
+
+
+def _save_report_xlsx(
+    connection: duckdb.DuckDBPyConnection,
+    columns: list[str],
+    output_path: Path,
+) -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(write_only=True)
+    sheet = workbook.create_sheet("Report")
+    sheet.append(columns)
+    cursor = connection.execute("SELECT * FROM report_result ORDER BY 1")
+    while True:
+        batch = cursor.fetchmany(5000)
+        if not batch:
+            break
+        for row in batch:
+            sheet.append(
+                [
+                    ""
+                    if value is None
+                    else format_report_cell_value(columns[index], str(value))
+                    for index, value in enumerate(row)
+                ]
+            )
+
+    pivot = _fetch_report_pivot(connection, columns, None, None)
+    if pivot:
+        pivot_sheet = workbook.create_sheet("Pivot")
+        headers, body = pivot_table_to_rows(pivot)
+        pivot_sheet.append(headers)
+        for row in body:
+            pivot_sheet.append(row)
+
+    workbook.save(output_path)
 
 
 @dataclass
@@ -254,7 +320,8 @@ def run_report_query(
     connection = duckdb.connect()
     try:
         columns = _load_report_result(connection, csv_paths, report_sql, params)
-        total = connection.execute("SELECT COUNT(*) FROM report_result").fetchone()[0]
+        count_row = connection.execute("SELECT COUNT(*) FROM report_result").fetchone()
+        total = int(count_row[0]) if count_row else 0
         page_rows_raw = connection.execute(
             "SELECT * FROM report_result ORDER BY 1 LIMIT ? OFFSET ?",
             [limit, offset],
@@ -274,7 +341,7 @@ def run_report_query(
         connection.close()
 
 
-def export_report_csv(
+def export_report_xlsx(
     *,
     mode: str,
     date_from: str | None = None,
@@ -301,20 +368,43 @@ def export_report_csv(
     connection = duckdb.connect()
     try:
         columns = _load_report_result(connection, csv_paths, report_sql, params)
-        total = connection.execute("SELECT COUNT(*) FROM report_result").fetchone()[0]
-        delim = duckdb_read_csv_delim()
-        connection.execute(
-            f"""
-            COPY (SELECT * FROM report_result ORDER BY 1)
-            TO '{output_path.as_posix()}'
-            (HEADER, DELIMITER '{delim}')
-            """
-        )
+        count_row = connection.execute("SELECT COUNT(*) FROM report_result").fetchone()
+        total = int(count_row[0]) if count_row else 0
+        _save_report_xlsx(connection, columns, output_path)
         return ReportExportResult(
             columns=columns,
             row_count=total,
             file_name=output_name,
             output_path=output_path,
         )
+    finally:
+        connection.close()
+
+
+def run_report_pivot(
+    *,
+    mode: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    txn_id: str | None = None,
+    sql: str | None = None,
+    row_field: str | None = None,
+    col_field: str | None = None,
+) -> PivotTable:
+    csv_paths, report_sql, params = _resolve_report_query(
+        mode=mode,
+        date_from=date_from,
+        date_to=date_to,
+        txn_id=txn_id,
+        sql=sql,
+    )
+
+    connection = duckdb.connect()
+    try:
+        columns = _load_report_result(connection, csv_paths, report_sql, params)
+        pivot = _fetch_report_pivot(connection, columns, row_field, col_field)
+        if not pivot:
+            raise ValueError("Report columns do not include fields for a pivot table.")
+        return pivot
     finally:
         connection.close()

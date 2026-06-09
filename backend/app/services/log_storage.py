@@ -166,6 +166,13 @@ def read_log_files_by_ids(file_ids: list[str]) -> list[tuple[str, str]]:
     return parsed_files
 
 
+def delete_log_day(log_date: str) -> None:
+    storage_dir = get_log_storage_dir()
+    day_dir = storage_dir / log_date
+    if day_dir.exists():
+        shutil.rmtree(day_dir)
+
+
 def delete_log_file(file_id: str) -> None:
     storage_dir = get_log_storage_dir()
     log_date, acs_node = parse_file_id(file_id)

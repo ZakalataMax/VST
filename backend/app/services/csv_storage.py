@@ -192,6 +192,12 @@ def resolve_csv_paths_for_dates(dates: list[str]) -> list[Path]:
     return paths
 
 
+def delete_csv_day(day: str) -> None:
+    csv_dir = get_csv_storage_dir()
+    (csv_dir / f"{day}.csv").unlink(missing_ok=True)
+    (csv_dir / f"{day}.meta.json").unlink(missing_ok=True)
+
+
 def list_all_csv_paths() -> list[Path]:
     csv_dir = get_csv_storage_dir()
     paths = sorted(csv_dir.glob("*.csv"), key=lambda path: path.stem)

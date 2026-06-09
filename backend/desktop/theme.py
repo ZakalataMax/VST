@@ -297,39 +297,382 @@ QListWidget::item:hover:!selected {{
     border-right: 1px solid {BORDER};
 }}
 
-#DayActionRow {{
-    background-color: rgba(255, 255, 255, 0.02);
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_SM};
+#CoverageHeader {{
+    background-color: {BG_PAPER};
+    border-bottom: 1px solid {BORDER};
 }}
 
-#DayActionRow:hover {{
-    border-color: rgba(124, 156, 255, 0.35);
+#CoverageTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    background: transparent;
 }}
 
-#DayCard {{
-    background-color: rgba(255, 255, 255, 0.02);
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_SM};
-    border-left: 3px solid {BORDER};
+#CoverageTable {{
+    background-color: {BG_PAPER};
+    border: none;
+    gridline-color: transparent;
+    selection-background-color: transparent;
+    selection-color: {TEXT_PRIMARY};
 }}
 
-#DayCard[selected="true"] {{
+#CoverageTable QHeaderView::section {{
+    background-color: {BG_PAPER};
+    color: {TEXT_MUTED};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    padding: 4px 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}}
+
+#CoverageTable::item {{
+    border-bottom: 1px solid rgba(42, 46, 56, 0.65);
+    padding: 0 2px;
+}}
+
+#CoverageTable::item:selected {{
+    background-color: transparent;
+    color: {TEXT_PRIMARY};
+}}
+
+#ImportParsePanel {{
+    background-color: transparent;
+}}
+
+#ImportPanelTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: 15px;
+    font-weight: 700;
+}}
+
+#ImportSectionLabel {{
+    color: {TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding-top: 2px;
+}}
+
+#ImportProgress {{
+    background-color: {BG_INPUT};
+    border: none;
+    border-radius: 2px;
+}}
+
+#ImportProgress::chunk {{
+    background-color: {PRIMARY};
+    border-radius: 2px;
+}}
+
+#ImportContentArea {{
+    background-color: transparent;
+}}
+
+#ImportDaysScroll {{
+    background-color: transparent;
+}}
+
+#ImportDaysContainer {{
+    background-color: transparent;
+}}
+
+#ImportDropZone {{
+    background-color: transparent;
+    border: 2px dashed transparent;
+    border-radius: {RADIUS};
+}}
+
+#ImportDropZone[dragActive="true"] {{
+    border: 2px dashed {PRIMARY};
     background-color: rgba(124, 156, 255, 0.08);
-    border-color: rgba(124, 156, 255, 0.5);
-    border-left: 3px solid {PRIMARY};
 }}
 
-#DayCard[status="complete"] {{
-    border-left-color: {SUCCESS};
+#ImportDragOverlay {{
+    background-color: rgba(124, 156, 255, 0.07);
+    border: none;
 }}
 
-#DayCard[status="parsed"] {{
-    border-left-color: {WARNING};
+#ImportMessage {{
+    color: {TEXT_MUTED};
+    font-size: 12px;
+    padding: 0;
+    background: transparent;
+    border: none;
 }}
 
-#DayCard[status="ready"] {{
-    border-left-color: {INFO};
+#ImportMessage[filled="true"] {{
+    padding: 8px 12px;
+    border-radius: {RADIUS_SM};
+    background-color: rgba(154, 160, 166, 0.08);
+    border: 1px solid {BORDER};
+}}
+
+#ImportMessage[error="true"] {{
+    color: #f44336;
+    background-color: rgba(244, 67, 54, 0.08);
+    border-color: rgba(244, 67, 54, 0.25);
+}}
+
+#ImportDayDetail {{
+    background-color: {BG_ELEVATED};
+    border: 1px solid rgba(124, 156, 255, 0.14);
+    border-radius: {RADIUS};
+}}
+
+#ImportDayDate {{
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+}}
+
+#ImportMetricCard {{
+    background-color: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM};
+}}
+
+#ImportMetricCaption {{
+    color: {TEXT_MUTED};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}}
+
+#ImportMetricValue {{
+    color: {TEXT_PRIMARY};
+    font-size: 15px;
+    font-weight: 600;
+}}
+
+#ImportMetricValue[coverageKind="full"] {{
+    color: {SUCCESS};
+}}
+
+#ImportMetricValue[coverageKind="partial"] {{
+    color: {WARNING};
+}}
+
+#ImportMetricValue[coverageKind="none"] {{
+    color: {TEXT_MUTED};
+}}
+
+#ImportDayErrorBox {{
+    background-color: rgba(244, 67, 54, 0.06);
+    border: 1px solid rgba(244, 67, 54, 0.2);
+    border-radius: {RADIUS_SM};
+}}
+
+#ImportDayError {{
+    color: #f44336;
+    font-size: 12px;
+    background: transparent;
+    border: none;
+}}
+
+#ReportPanel {{
+    background-color: transparent;
+}}
+
+#ReportToolbar {{
+    background-color: {BG_PAPER};
+    border-bottom: 1px solid {BORDER};
+}}
+
+#ReportRangeDash {{
+    color: {TEXT_MUTED};
+    font-size: 14px;
+    font-weight: 600;
+    padding: 0;
+    background: transparent;
+}}
+
+#ReportDivider {{
+    background-color: {BORDER};
+    border: none;
+    margin: 0 4px;
+}}
+
+#ReportContent {{
+    background-color: {BG_DEFAULT};
+}}
+
+#ReportEmptyState {{
+    background-color: {BG_DEFAULT};
+    border: none;
+}}
+
+#ReportField {{
+    min-height: 32px;
+    max-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+}}
+
+#ReportSqlIndicator {{
+    color: {PRIMARY};
+    font-size: 11px;
+    font-weight: 700;
+    padding-left: 4px;
+}}
+
+#ReportResultsBar {{
+    background-color: {BG_ELEVATED};
+    border-bottom: 1px solid {BORDER};
+}}
+
+#ReportResultsTitle {{
+    color: {TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}}
+
+#ReportCloseButton {{
+    color: {TEXT_MUTED};
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: {RADIUS_SM};
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0;
+}}
+
+#ReportCloseButton:hover {{
+    color: {TEXT_PRIMARY};
+    border-color: {BORDER};
+    background-color: rgba(244, 67, 54, 0.1);
+}}
+
+#ReportProgress {{
+    background-color: {BG_INPUT};
+    border: none;
+    border-radius: 0;
+}}
+
+#ReportProgress::chunk {{
+    background-color: {PRIMARY};
+}}
+
+#ReportTable {{
+    background-color: {BG_PAPER};
+    border: none;
+    gridline-color: transparent;
+    selection-background-color: rgba(124, 156, 255, 0.18);
+    selection-color: {TEXT_PRIMARY};
+    font-size: 12px;
+}}
+
+#ReportTable QHeaderView::section {{
+    background-color: {BG_ELEVATED};
+    color: {TEXT_MUTED};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    border-right: 1px solid rgba(42, 46, 56, 0.6);
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}}
+
+#ReportFooter {{
+    background-color: {BG_PAPER};
+    border-top: 1px solid {BORDER};
+}}
+
+#CompactPrimaryButton {{
+    background-color: {PRIMARY};
+    color: #0f1115;
+    border: none;
+    border-radius: {RADIUS_SM};
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 64px;
+}}
+
+#CompactPrimaryButton:hover {{
+    background-color: #96adff;
+}}
+
+#CompactSecondaryButton {{
+    background-color: {BG_ELEVATED};
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM};
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 64px;
+}}
+
+#CompactSecondaryButton:hover {{
+    border-color: {PRIMARY};
+    color: {PRIMARY};
+}}
+
+#CompactGhostButton {{
+    background-color: transparent;
+    color: {TEXT_SECONDARY};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM};
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+#CompactGhostButton:hover {{
+    color: {PRIMARY};
+    border-color: {PRIMARY};
+}}
+
+#StatusPill, #StatusPillMuted {{
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    background-color: rgba(154, 160, 166, 0.15);
+    color: {TEXT_MUTED};
+}}
+
+#StatusPillInfo {{
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    background-color: rgba(41, 182, 246, 0.15);
+    color: {INFO};
+}}
+
+#StatusPillWarning {{
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    background-color: rgba(255, 152, 0, 0.15);
+    color: {WARNING};
+}}
+
+#StatusPillError {{
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    background-color: rgba(244, 67, 54, 0.15);
+    color: #f44336;
 }}
 
 QTableWidget {{

@@ -1,0 +1,19 @@
+{
+  "include": ["backend/app", "backend/desktop"],
+  "exclude": [
+    "backend/build",
+    "backend/dist",
+    "backend/data",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/node_modules"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "extraPaths": ["backend"]
+    }
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true
+}

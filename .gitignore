@@ -1,20 +1,22 @@
-node_modules
-dist
 .DS_Store
+.idea/
+.vscode/
+
 *.log
 *.pyc
-__pycache__
-.pytest_cache
+*.pyo
+__pycache__/
+.pytest_cache/
 pytest-cache-files-*
 
-frontend/node_modules
-frontend/dist
+node_modules/
+dist/
+frontend/node_modules/
+frontend/dist/
 
 backend/.env
-backend/__pycache__
-backend/data/logs/
-backend/data/csv/
-backend/data/csv_reports_final/
-
-.idea
-.vscode
+backend/dist/.env
+backend/build/
+backend/dist/
+backend/data/
+backend/_test_report.xlsx

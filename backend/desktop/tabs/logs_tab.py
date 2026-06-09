@@ -1,84 +1,46 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
-    QPlainTextEdit,
-    QProgressBar,
-    QScrollArea,
     QTabWidget,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from app.paths import get_report_output_dir
+from app.services.report import validate_report_range
 from app.services.csv_storage import list_csv_days
 from app.services.log_storage import list_log_days, list_log_files
-from desktop.coverage_utils import build_coverage_days, detect_acs_node
-from desktop.report_sql_utils import apply_literal_dates_to_sql, load_report_template_sql
-from desktop.widgets.common import Card, SectionHeader, field_label, ghost_button, primary_button, secondary_button
+from desktop.coverage_utils import (
+    STATUS_READY,
+    build_coverage_days,
+)
+from desktop.report_sql_utils import apply_literal_dates_to_sql
 from desktop.widgets.coverage_sidebar import CoverageSidebar
-from desktop.widgets.day_action_row import DayActionRow
-from desktop.workers import ParseLogsWorker, ReportExportWorker, ReportRunWorker, UploadLogsWorker
+from desktop.widgets.import_parse_panel import ImportParsePanel
+from desktop.widgets.report_panel import ReportPanel
+from desktop.workers import (
+    DeleteDayWorker,
+    ParseLogsWorker,
+    ReportExportWorker,
+    ReportPivotWorker,
+    ReportRunWorker,
+    UploadLogsWorker,
+)
 
 CHUNK_SIZE = 100
 
 
-def _validate_queue_pairs(file_ids: list[str], files: list[dict]) -> str:
-    by_id = {item["id"]: item for item in files}
-    by_date: dict[str, set[str]] = {}
-    for file_id in file_ids:
-        item = by_id.get(file_id)
-        if not item:
-            return f"Unknown file id: {file_id}"
-        node = item.get("acsNode") or detect_acs_node(item.get("filename", ""))
-        if not node:
-            return f"Log file name must include ACS1 or ACS2: {item.get('filename')}"
-        log_date = item.get("logDate")
-        if not log_date:
-            return f"Missing log date for: {item.get('filename')}"
-        by_date.setdefault(log_date, set()).add(node)
-
-    missing = sorted(
-        date for date, nodes in by_date.items() if not ("acs1" in nodes and "acs2" in nodes)
-    )
-    if missing:
-        return f"Each date must include both ACS1 and ACS2 logs. Missing pair for: {', '.join(missing)}"
-    return ""
-
-
-class CellDetailDialog(QDialog):
-    def __init__(self, title: str, value: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.resize(720, 480)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        header = QLabel(title)
-        header.setObjectName("CardTitle")
-        layout.addWidget(header)
-        editor = QPlainTextEdit(value or "—")
-        editor.setReadOnly(True)
-        editor.setMinimumHeight(360)
-        layout.addWidget(editor)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
-        layout.addWidget(buttons)
+def _missing_acs_nodes(log_day: dict) -> list[str]:
+    return [node.upper() for node in ("acs1", "acs2") if not log_day.get(node)]
 
 
 class LogsTab(QWidget):
@@ -86,32 +48,37 @@ class LogsTab(QWidget):
         super().__init__()
         self._files: list[dict] = []
         self._coverage_days: list[dict] = []
-        self._queue_ids: list[str] = []
-        self._day_rows: list[DayActionRow] = []
+        self._syncing_selection = False
+        self._selected_dates: list[str] = []
         self._report_columns: list[str] = []
         self._report_rows: list[dict] = []
         self._report_offset = 0
         self._report_total = 0
         self._active_worker = None
+        self._parsing_dates: set[str] = set()
+        self._failed_dates: dict[str, str] = {}
+        self._import_skip_messages: list[str] = []
+        self._last_upload_date = ""
+        self._last_worker_error = ""
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         self.sidebar = CoverageSidebar()
-        self.sidebar.day_selected.connect(self._on_coverage_selected)
+        self.sidebar.days_selected.connect(self._on_sidebar_days_selected)
         root.addWidget(self.sidebar)
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(16, 12, 16, 16)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_parse_tab(), "Import & Parse")
         self.tabs.addTab(self._build_report_tab(), "Report")
         self.tabs.currentChanged.connect(self._on_tab_changed)
-        content_layout.addWidget(self.tabs)
+        content_layout.addWidget(self.tabs, stretch=1)
         root.addWidget(content, stretch=1)
 
         self.refresh_data()
@@ -120,271 +87,191 @@ class LogsTab(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(0)
 
-        card = Card()
-        header_row = QHBoxLayout()
-        header_row.addWidget(SectionHeader("Log days"))
-        header_row.addStretch()
-        upload_btn = primary_button("Upload logs…")
-        upload_btn.clicked.connect(self._upload_logs)
-        refresh_btn = secondary_button("Refresh")
-        refresh_btn.clicked.connect(self.refresh_data)
-        header_row.addWidget(upload_btn)
-        header_row.addWidget(refresh_btn)
-        card.add_layout(header_row)
-
-        self.parse_status = QLabel("Upload ACS1 and ACS2 .log files, then click Parse on a day.")
-        self.parse_status.setObjectName("MutedLabel")
-        self.parse_status.setWordWrap(True)
-        card.add_widget(self.parse_status)
-
-        self.parse_progress = QProgressBar()
-        self.parse_progress.setVisible(False)
-        self.parse_progress.setFixedHeight(6)
-        card.add_widget(self.parse_progress)
-
-        self.days_scroll = QScrollArea()
-        self.days_scroll.setWidgetResizable(True)
-        self.days_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.days_body = QWidget()
-        self.days_layout = QVBoxLayout(self.days_body)
-        self.days_layout.setContentsMargins(0, 0, 0, 0)
-        self.days_layout.setSpacing(8)
-        self.days_layout.addStretch()
-        self.days_scroll.setWidget(self.days_body)
-        self.days_scroll.setMinimumHeight(220)
-        card.add_widget(self.days_scroll)
-
-        queue_header = QHBoxLayout()
-        self.queue_header = SectionHeader("Batch queue")
-        queue_header.addWidget(self.queue_header)
-        queue_header.addStretch()
-        clear_queue_btn = ghost_button("Clear")
-        clear_queue_btn.clicked.connect(self._clear_queue)
-        parse_queue_btn = primary_button("Parse queue")
-        parse_queue_btn.clicked.connect(self._parse_queue)
-        queue_header.addWidget(clear_queue_btn)
-        queue_header.addWidget(parse_queue_btn)
-        card.add_layout(queue_header)
-
-        self.queue_list = QListWidget()
-        self.queue_list.setMaximumHeight(96)
-        card.add_widget(self.queue_list)
-        layout.addWidget(card)
+        self.import_panel = ImportParsePanel()
+        self.import_panel.load_requested.connect(self._upload_logs)
+        self.import_panel.files_dropped.connect(self._upload_paths)
+        self.import_panel.delete_requested.connect(self._delete_day)
+        layout.addWidget(self.import_panel)
         return tab
 
     def _build_report_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        card = Card()
-        self.report_header = SectionHeader("Report")
-        card.add_widget(self.report_header)
-
-        filters = QHBoxLayout()
-        filters.setSpacing(10)
-        from_col = QVBoxLayout()
-        from_col.setSpacing(6)
-        from_col.addWidget(field_label("From"))
-        self.date_from = QLineEdit()
-        self.date_from.setPlaceholderText("2026-05-27")
-        self.date_from.textChanged.connect(lambda: self._apply_dates_to_sql())
-        from_col.addWidget(self.date_from)
-        filters.addLayout(from_col)
-
-        to_col = QVBoxLayout()
-        to_col.setSpacing(6)
-        to_col.addWidget(field_label("To"))
-        self.date_to = QLineEdit()
-        self.date_to.setPlaceholderText("2026-05-29")
-        self.date_to.textChanged.connect(lambda: self._apply_dates_to_sql())
-        to_col.addWidget(self.date_to)
-        filters.addLayout(to_col)
-
-        txn_col = QVBoxLayout()
-        txn_col.setSpacing(6)
-        txn_col.addWidget(field_label("Transaction ID"))
-        self.txn_id = QLineEdit()
-        txn_col.addWidget(self.txn_id)
-        filters.addLayout(txn_col, stretch=1)
-        card.add_layout(filters)
-
-        options = QHBoxLayout()
-        self.custom_sql_check = QCheckBox("Custom SQL")
-        self.custom_sql_check.toggled.connect(self._on_custom_sql_toggled)
-        self.use_txn_id_check = QCheckBox("Filter by transaction ID")
-        options.addWidget(self.custom_sql_check)
-        options.addWidget(self.use_txn_id_check)
-        options.addStretch()
-        card.add_layout(options)
-
-        self.sql_editor = QPlainTextEdit()
-        self.sql_editor.setPlaceholderText("Custom SQL (SELECT or WITH …)")
-        self.sql_editor.setVisible(False)
-        self.sql_editor.setMinimumHeight(120)
-        self.sql_editor.setMaximumHeight(180)
-        card.add_widget(self.sql_editor)
-
-        report_buttons = QHBoxLayout()
-        run_btn = primary_button("Run preview")
-        run_btn.clicked.connect(self._run_report)
-        export_btn = secondary_button("Export CSV")
-        export_btn.clicked.connect(self._export_report)
-        self.load_more_btn = secondary_button("Load more")
-        self.load_more_btn.clicked.connect(self._load_more_report)
-        report_buttons.addWidget(run_btn)
-        report_buttons.addWidget(export_btn)
-        report_buttons.addWidget(self.load_more_btn)
-        report_buttons.addStretch()
-        card.add_layout(report_buttons)
-
-        self.report_status = QLabel("")
-        self.report_status.setObjectName("MutedLabel")
-        card.add_widget(self.report_status)
-
-        self.report_progress = QProgressBar()
-        self.report_progress.setVisible(False)
-        self.report_progress.setFixedHeight(6)
-        card.add_widget(self.report_progress)
-
-        self.report_table = QTableWidget()
-        self.report_table.setAlternatingRowColors(True)
-        self.report_table.setShowGrid(False)
-        self.report_table.verticalHeader().setVisible(False)
-        self.report_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.report_table.cellDoubleClicked.connect(self._open_cell_detail)
-        card.add_widget(self.report_table)
-        layout.addWidget(card)
-        return tab
+        self.report_panel = ReportPanel()
+        self.report_panel.run_requested.connect(self._run_report)
+        self.report_panel.export_requested.connect(self._export_report)
+        self.report_panel.load_more_requested.connect(self._load_more_report)
+        self.report_panel.pivot_requested.connect(self._run_report_pivot)
+        self.report_panel.detail_view_restored.connect(self._restore_detail_view_state)
+        return self.report_panel
 
     def refresh_data(self) -> None:
         try:
             self._files = list_log_files()
             log_days = list_log_days()
             csv_days = list_csv_days()
-            self._coverage_days = build_coverage_days(self._files, log_days, csv_days)
-            self._render_coverage()
-            self._render_day_rows()
+            self._coverage_days = build_coverage_days(
+                self._files,
+                log_days,
+                csv_days,
+                parsing_dates=self._parsing_dates,
+                failed_dates=self._failed_dates,
+            )
+            self._render_views()
         except Exception as error:
             QMessageBox.critical(self, "Refresh failed", str(error))
 
-    def _coverage_summary(self) -> str:
-        with_pair = complete = total_rows = 0
-        for day in self._coverage_days:
-            log_day = day.get("log_day") or {}
-            csv_day = day.get("csv_day")
-            if log_day.get("acs1") and log_day.get("acs2"):
-                with_pair += 1
-            if day.get("complete"):
-                complete += 1
-            if csv_day:
-                total_rows += int(csv_day.get("rowCount") or 0)
-        return (
-            f"{len(self._coverage_days)} days · {with_pair} pairs · "
-            f"{complete} complete · {total_rows:,} rows"
-        )
+    def _render_views(self) -> None:
+        self.sidebar.set_days(self._coverage_days)
+        days = [self._day_by_date(date) for date in self._selected_dates]
+        days = [day for day in days if day]
+        if not days and self._coverage_days:
+            default_day = self._default_selection_day()
+            days = [default_day] if default_day else []
+        self._apply_days_selection(days)
 
-    def _render_coverage(self) -> None:
-        self.sidebar.set_days(self._coverage_days, self._coverage_summary())
+    def _default_selection_day(self) -> dict | None:
+        for target in (
+            (date.today() - timedelta(days=1)).isoformat(),
+            date.today().isoformat(),
+        ):
+            day = self._day_by_date(target)
+            if day:
+                return day
+        if self._last_upload_date:
+            day = self._day_by_date(self._last_upload_date)
+            if day:
+                return day
+        return self._coverage_days[0] if self._coverage_days else None
 
-    def _saved_day_file_ids(self, day: dict) -> list[str]:
-        day_files = day.get("files") or []
-        if day_files:
-            return [file["id"] for file in day_files if file.get("id")]
-        log_day = day.get("log_day") or {}
-        file_ids: list[str] = []
-        for node in ("acs1", "acs2"):
-            if log_day.get(node):
-                file_ids.append(f"{day['date']}/{node}")
-        return file_ids
+    def _day_by_date(self, date: str) -> dict | None:
+        if not date:
+            return None
+        return next((item for item in self._coverage_days if item["date"] == date), None)
 
-    def _queued_dates(self) -> set[str]:
-        dates: set[str] = set()
-        for index in range(self.queue_list.count()):
-            item = self.queue_list.item(index)
-            if not item:
+    def _apply_days_selection(self, days: list[dict]) -> None:
+        self._syncing_selection = True
+        dates = [day["date"] for day in days]
+        self._selected_dates = dates
+        self.sidebar.set_selected_dates(dates)
+        self.import_panel.set_days(days)
+        self._sync_report_dates(dates)
+        self._syncing_selection = False
+
+    def _sync_report_dates(self, dates: list[str]) -> None:
+        if not dates:
+            return
+        sorted_dates = sorted(dates)
+        self.report_panel.set_date_range(sorted_dates[0], sorted_dates[-1])
+
+    def _select_days(self, dates: list[str]) -> None:
+        days = [self._day_by_date(date) for date in dates]
+        days = [day for day in days if day]
+        self._apply_days_selection(days)
+
+    def _select_day(self, date: str) -> None:
+        self._select_days([date])
+
+    def _on_sidebar_days_selected(self, dates: list[str]) -> None:
+        if self._syncing_selection:
+            return
+        if not dates:
+            self._apply_days_selection([])
+            return
+        self._select_days(dates)
+
+    def _open_report_for_date(self, date: str) -> None:
+        self._select_day(date)
+        self.tabs.setCurrentIndex(1)
+
+    def _parse_ready(self) -> None:
+        dates = [day["date"] for day in self._coverage_days if day.get("status") == STATUS_READY]
+        self._parse_dates(dates)
+
+    def _parse_day(self, date: str) -> None:
+        self._parse_dates([date])
+
+    def _split_parseable_dates(self, dates: list[str]) -> tuple[list[str], list[str]]:
+        day_by_date = {day["date"]: day for day in self._coverage_days}
+        parseable: list[str] = []
+        skip_messages: list[str] = []
+        for date in sorted(dates):
+            day = day_by_date.get(date)
+            if not day:
                 continue
-            file_id = item.data(Qt.ItemDataRole.UserRole)
-            if isinstance(file_id, str) and "/" in file_id:
-                dates.add(file_id.split("/", 1)[0])
-        return dates
+            log_day = day.get("log_day") or {}
+            missing = _missing_acs_nodes(log_day)
+            if missing:
+                skip_messages.append(
+                    f"{date}: missing {', '.join(missing)} log — parsing skipped"
+                )
+                continue
+            parseable.append(date)
+        return parseable, skip_messages
 
-    def _render_day_rows(self) -> None:
-        while self.days_layout.count() > 1:
-            item = self.days_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._day_rows = []
-
-        saved_days = [day for day in self._coverage_days if self._saved_day_file_ids(day)]
-        queued_dates = self._queued_dates()
-
-        if not saved_days:
-            empty = QLabel("No saved logs yet. Click Upload logs and select ACS1 + ACS2 files for the same date.")
-            empty.setObjectName("MutedLabel")
-            empty.setWordWrap(True)
-            empty.setContentsMargins(4, 12, 4, 12)
-            self.days_layout.insertWidget(0, empty)
-            self._update_queue_header()
+    def _parse_dates(self, dates: list[str]) -> None:
+        if not dates:
             return
-
-        for day in saved_days:
-            row = DayActionRow(day, in_queue=day["date"] in queued_dates)
-            row.queue_clicked.connect(self._queue_day)
-            row.parse_clicked.connect(self._parse_day)
-            self.days_layout.insertWidget(self.days_layout.count() - 1, row)
-            self._day_rows.append(row)
-        self._update_queue_header()
-
-    def _update_queue_header(self) -> None:
-        count = self.queue_list.count()
-        self.queue_header.set_badge(str(count) if count else "")
-
-    def _day_label(self, day: dict) -> str:
-        return day["date"]
-
-    def _queue_day(self, day: dict) -> None:
-        file_ids = self._saved_day_file_ids(day)
-        if not file_ids:
-            return
-        self._add_file_ids_to_queue(file_ids, self._day_label(day))
-        self._render_day_rows()
-
-    def _parse_day(self, day: dict) -> None:
-        file_ids = self._saved_day_file_ids(day)
-        if not file_ids:
-            return
-        error = _validate_queue_pairs(file_ids, self._files)
-        if error:
-            QMessageBox.warning(self, "Parse", error)
+        parseable, skip_messages = self._split_parseable_dates(dates)
+        if skip_messages:
+            known = set(self._import_skip_messages)
+            for message in skip_messages:
+                if message not in known:
+                    self._import_skip_messages.append(message)
+                    known.add(message)
+            self._sync_import_message()
+        if not parseable:
             return
         self._start_worker(
-            ParseLogsWorker(file_ids),
-            indeterminate=True,
+            ParseLogsWorker(parseable),
+            indeterminate=False,
             for_parse=True,
-            on_progress=lambda current, total, label: self._set_progress(current, total, label, parse=True),
-            on_ok=lambda saved: (
-                self.refresh_data(),
-                self._set_status(f"Parsed {day['date']} ({len(saved)} day(s)).", parse=True),
-            ),
+            on_start=lambda: self._mark_parsing_dates(parseable),
+            on_progress=lambda current, total, text: self._set_progress(current, total, text, parse=True),
+            on_ok=self._on_parse_batch_success,
         )
 
-    def _on_coverage_selected(self, date: str) -> None:
-        self.sidebar.set_selected_date(date)
-        self.date_from.setText(date)
-        self.date_to.setText(date)
-        self.tabs.setCurrentIndex(1)
-        if self.custom_sql_check.isChecked():
-            self._apply_dates_to_sql()
+    def _on_parse_batch_success(self, result) -> None:
+        saved: list[dict] = []
+        failed: dict[str, str] = {}
+        if result is not None:
+            saved = list(getattr(result, "saved", []) or [])
+            failed = dict(getattr(result, "failed", {}) or {})
+        for date, reason in failed.items():
+            self._failed_dates[date] = reason
+        for item in saved:
+            date = item.get("date")
+            if date:
+                self._failed_dates.pop(date, None)
+        self.refresh_data()
+        parsed_days = len({item.get("date") for item in saved if item.get("date")})
+        if not self._import_skip_messages and not self._failed_dates:
+            suffix = f"{parsed_days} day(s)" if parsed_days else "logs"
+            self._set_import_message(f"Parsed {suffix}.", error=False)
+        else:
+            self._sync_import_message()
+
+    def _mark_parsing_dates(self, dates: list[str]) -> None:
+        self._parsing_dates = set(dates)
+        for date in dates:
+            self._failed_dates.pop(date, None)
+        self._render_views()
+
+    def _clear_parsing(self, *, success: bool) -> None:
+        if not success:
+            for date in self._parsing_dates:
+                self._failed_dates[date] = self._last_worker_error or "Parse failed"
+        else:
+            for date in self._parsing_dates:
+                self._failed_dates.pop(date, None)
+        self._parsing_dates = set()
+        self._render_views()
+        if not success:
+            self._sync_import_message()
 
     def _on_tab_changed(self, index: int) -> None:
-        if index == 1 and not self.date_from.text().strip() and self._coverage_days:
-            date = self._coverage_days[0]["date"]
-            self.date_from.setText(date)
-            self.date_to.setText(date)
+        if index == 1 and not self.report_panel.date_from.text().strip():
+            self._sync_report_dates(self._selected_dates)
 
     def _upload_logs(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -395,6 +282,13 @@ class LogsTab(QWidget):
         )
         if not paths:
             return
+        self._upload_paths(paths)
+
+    def _upload_paths(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        self._import_skip_messages = []
+        self.import_panel.clear_message()
         self._start_worker(
             UploadLogsWorker(paths),
             indeterminate=False,
@@ -402,86 +296,111 @@ class LogsTab(QWidget):
             on_progress=lambda current, total, name: self._set_progress(
                 current, total, f"Uploading {name}", parse=True
             ),
-            on_ok=lambda: (self.refresh_data(), self._set_status("Upload complete.", parse=True)),
+            on_ok=self._after_upload,
         )
 
-    def _add_file_ids_to_queue(self, file_ids: list[str], label: str) -> None:
-        existing = {self.queue_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.queue_list.count())}
-        for file_id in file_ids:
-            if file_id in existing:
+    def _after_upload(self, result) -> None:
+        saved = list(getattr(result, "saved", []) or [])
+        upload_errors = list(getattr(result, "errors", []) or [])
+        self.refresh_data()
+        uploaded_dates = {record["logDate"] for record in saved}
+        if uploaded_dates:
+            self._last_upload_date = max(uploaded_dates)
+        for upload_date in uploaded_dates:
+            self._failed_dates.pop(upload_date, None)
+        ready_dates, skip_messages = self._upload_parse_plan(uploaded_dates)
+        self._import_skip_messages = skip_messages + upload_errors
+        if self._import_skip_messages:
+            self._sync_import_message()
+        if ready_dates:
+            self._parse_dates(ready_dates)
+        elif not self._import_skip_messages:
+            self._set_import_message("Upload complete.", error=False)
+        if self._last_upload_date:
+            self._select_day(self._last_upload_date)
+
+    def _upload_parse_plan(self, uploaded_dates: set[str]) -> tuple[list[str], list[str]]:
+        day_by_date = {day["date"]: day for day in self._coverage_days}
+        ready_dates: list[str] = []
+        skip_messages: list[str] = []
+        for date in sorted(uploaded_dates):
+            day = day_by_date.get(date)
+            if not day:
                 continue
-            self.queue_list.addItem(QListWidgetItem(f"{label} · {file_id.split('/')[-1].upper()}"))
-            self.queue_list.item(self.queue_list.count() - 1).setData(Qt.ItemDataRole.UserRole, file_id)
-            existing.add(file_id)
-        self._queue_ids = [
-            self.queue_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.queue_list.count())
-        ]
-        self._update_queue_header()
+            if day.get("status") == STATUS_READY:
+                ready_dates.append(date)
+                continue
+            log_day = day.get("log_day") or {}
+            missing = _missing_acs_nodes(log_day)
+            if missing:
+                skip_messages.append(
+                    f"{date}: missing {', '.join(missing)} log — parsing skipped"
+                )
+        return ready_dates, skip_messages
 
-    def _clear_queue(self) -> None:
-        self.queue_list.clear()
-        self._queue_ids = []
-        self._update_queue_header()
-        self._render_day_rows()
+    def _sync_import_message(self) -> None:
+        lines = list(self._import_skip_messages)
+        lines.extend(f"{date}: {reason}" for date, reason in sorted(self._failed_dates.items()))
+        if lines:
+            self._set_import_message("\n".join(lines), error=True)
+        else:
+            self.import_panel.clear_message()
 
-    def _parse_queue(self) -> None:
-        self._queue_ids = [
-            self.queue_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.queue_list.count())
-        ]
-        if not self._queue_ids:
-            QMessageBox.warning(self, "Parse", "Queue is empty. Click Queue on a day or Parse to run one day.")
-            return
-        error = _validate_queue_pairs(self._queue_ids, self._files)
-        if error:
-            QMessageBox.warning(self, "Parse", error)
+    def _set_import_message(self, text: str, *, error: bool = False) -> None:
+        self.import_panel.set_message(text, error=error)
+
+    def _delete_day(self, day_date: str) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Delete day data",
+            f"Delete all logs and CSV for {day_date}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
             return
         self._start_worker(
-            ParseLogsWorker(self._queue_ids),
+            DeleteDayWorker(day_date),
             indeterminate=True,
             for_parse=True,
-            on_progress=lambda current, total, label: self._set_progress(current, total, label, parse=True),
-            on_ok=lambda saved: (
-                self.refresh_data(),
-                self._clear_queue(),
-                self._set_status(f"Parsed {len(saved)} day(s).", parse=True),
-            ),
+            on_ok=lambda: self._on_day_deleted(day_date),
         )
 
-    def _on_custom_sql_toggled(self, checked: bool) -> None:
-        self.sql_editor.setVisible(checked)
-        if checked and not self.sql_editor.toPlainText().strip():
-            self.sql_editor.setPlainText(load_report_template_sql())
-        self._apply_dates_to_sql()
-
-    def _apply_dates_to_sql(self) -> None:
-        if not self.custom_sql_check.isChecked():
-            return
-        sql = self.sql_editor.toPlainText()
-        if not sql.strip():
-            return
-        if "%(date_from)s" in sql or "%(date_to)s" in sql or "%(txn_id)s" in sql:
-            return
-        updated = apply_literal_dates_to_sql(sql, self.date_from.text(), self.date_to.text())
-        if updated != sql:
-            self.sql_editor.setPlainText(updated)
+    def _on_day_deleted(self, day_date: str) -> None:
+        self._failed_dates.pop(day_date, None)
+        if day_date in self._selected_dates:
+            self._selected_dates = [date for date in self._selected_dates if date != day_date]
+        if self._last_upload_date == day_date:
+            self._last_upload_date = ""
+        self.refresh_data()
+        self._set_import_message(f"Deleted data for {day_date}.", error=False)
 
     def _report_kwargs(self, *, limit: int | None = None, offset: int | None = None) -> dict:
-        if self.custom_sql_check.isChecked():
+        panel = self.report_panel
+        date_from, date_to = validate_report_range(
+            panel.date_from.text(),
+            panel.date_to.text(),
+        )
+        if panel.uses_custom_sql():
             mode = "custom"
-        elif self.use_txn_id_check.isChecked() and self.txn_id.text().strip():
+        elif panel.uses_txn_filter():
             mode = "txnId"
         else:
             mode = "date"
         kwargs = {
             "mode": mode,
-            "date_from": self.date_from.text().strip() or None,
-            "date_to": self.date_to.text().strip() or None,
-            "txn_id": self.txn_id.text().strip() or None,
+            "date_from": date_from,
+            "date_to": date_to,
+            "txn_id": panel.txn_id.text().strip() or None,
         }
         if mode == "custom":
-            sql = self.sql_editor.toPlainText().strip()
+            sql = panel.custom_sql()
             if "%(date_from)s" not in sql and "areq.messagedatetime >=" in sql.lower():
-                sql = apply_literal_dates_to_sql(sql, self.date_from.text(), self.date_to.text())
+                sql = apply_literal_dates_to_sql(
+                    sql,
+                    date_from,
+                    date_to,
+                )
             kwargs["sql"] = sql
         if limit is not None:
             kwargs["limit"] = limit
@@ -490,10 +409,16 @@ class LogsTab(QWidget):
         return kwargs
 
     def _run_report(self) -> None:
+        try:
+            kwargs = self._report_kwargs(limit=CHUNK_SIZE, offset=0)
+        except ValueError as error:
+            QMessageBox.warning(self, "Report", str(error))
+            return
         self._report_offset = 0
         self._report_rows = []
+        self.report_panel.prepare_run()
         self._start_worker(
-            ReportRunWorker(**self._report_kwargs(limit=CHUNK_SIZE, offset=0)),
+            ReportRunWorker(**kwargs),
             indeterminate=True,
             on_ok=self._on_report_page,
             status="Running report preview…",
@@ -514,46 +439,55 @@ class LogsTab(QWidget):
         self._report_columns = result.columns
         self._report_rows = list(result.rows)
         self._report_total = result.row_count
-        self._render_report_table()
-        self._set_status(f"Preview: {len(self._report_rows):,} of {self._report_total:,} rows")
-        self.report_header.set_badge(f"{self._report_total:,} rows")
-        self.load_more_btn.setEnabled(len(self._report_rows) < self._report_total)
+        self.report_panel.render_table(self._report_columns, self._report_rows)
+        shown = len(self._report_rows)
+        self.report_panel.set_total_rows(self._report_total)
+        self.report_panel.set_shown_rows(shown, self._report_total)
+        self.report_panel.set_status(f"Preview: {shown:,} of {self._report_total:,} rows")
+        self.report_panel.set_load_more_enabled(shown < self._report_total)
+        self.report_panel.set_export_visible(True)
+        self.report_panel.collapse_filters()
 
     def _append_report_page(self, result) -> None:
         self._report_rows.extend(result.rows)
-        self._render_report_table()
-        self._set_status(f"Preview: {len(self._report_rows):,} of {self._report_total:,} rows")
-        self.load_more_btn.setEnabled(len(self._report_rows) < self._report_total)
+        self.report_panel.render_table(self._report_columns, self._report_rows)
+        shown = len(self._report_rows)
+        self.report_panel.set_shown_rows(shown, self._report_total)
+        self.report_panel.set_status(f"Preview: {shown:,} of {self._report_total:,} rows")
+        self.report_panel.set_load_more_enabled(shown < self._report_total)
 
-    def _render_report_table(self) -> None:
-        self.report_table.clear()
-        self.report_table.setColumnCount(len(self._report_columns))
-        self.report_table.setRowCount(len(self._report_rows))
-        self.report_table.setHorizontalHeaderLabels(self._report_columns)
-        for row_index, row in enumerate(self._report_rows):
-            for col_index, column in enumerate(self._report_columns):
-                value = str(row.get(column, ""))
-                item = QTableWidgetItem(value)
-                if "timeline" in column.lower() and len(value) > 80:
-                    item.setToolTip(value[:500])
-                self.report_table.setItem(row_index, col_index, item)
-        self.report_table.resizeColumnsToContents()
+    def _restore_detail_view_state(self) -> None:
+        shown = len(self._report_rows)
+        self.report_panel.set_shown_rows(shown, self._report_total)
+        self.report_panel.set_status(f"Preview: {shown:,} of {self._report_total:,} rows")
+        self.report_panel.set_load_more_enabled(shown < self._report_total)
 
-    def _open_cell_detail(self, row: int, column: int) -> None:
-        if column < 0 or column >= len(self._report_columns):
+    def _run_report_pivot(self, row_field: str, col_field: str) -> None:
+        try:
+            kwargs = self._report_kwargs()
+        except ValueError as error:
+            QMessageBox.warning(self, "Report", str(error))
             return
-        name = self._report_columns[column]
-        if "timeline" not in name.lower():
-            return
-        item = self.report_table.item(row, column)
-        if not item:
-            return
-        dialog = CellDetailDialog(name, item.text(), self)
-        dialog.exec()
+        kwargs["row_field"] = row_field
+        kwargs["col_field"] = col_field
+        self._start_worker(
+            ReportPivotWorker(**kwargs),
+            indeterminate=True,
+            on_ok=self._on_report_pivot,
+            status="Building pivot…",
+        )
+
+    def _on_report_pivot(self, pivot) -> None:
+        self.report_panel.render_pivot(pivot, total_rows=self._report_total)
 
     def _export_report(self) -> None:
+        try:
+            kwargs = self._report_kwargs()
+        except ValueError as error:
+            QMessageBox.warning(self, "Report", str(error))
+            return
         self._start_worker(
-            ReportExportWorker(**self._report_kwargs()),
+            ReportExportWorker(**kwargs),
             indeterminate=True,
             on_ok=self._on_export_done,
             status="Export: building report…",
@@ -565,7 +499,7 @@ class LogsTab(QWidget):
         QMessageBox.information(
             self,
             "Export complete",
-            f"Saved {result.row_count:,} rows to:\n{path}\n\nFolder:\n{get_report_output_dir()}",
+            f"Saved {result.row_count:,} rows to Excel:\n{path}\n\nFolder:\n{get_report_output_dir()}",
         )
 
     def _start_worker(
@@ -574,52 +508,72 @@ class LogsTab(QWidget):
         *,
         indeterminate: bool,
         for_parse: bool = False,
+        on_start=None,
         on_progress=None,
         on_ok=None,
         status: str = "",
     ) -> None:
+        self._last_worker_error = ""
         if self._active_worker and self._active_worker.isRunning():
             QMessageBox.warning(self, "Busy", "Another task is already running.")
             return
         self._active_worker = worker
-        progress = self._active_progress(parse=for_parse)
-        progress.setVisible(True)
-        if indeterminate:
-            progress.setRange(0, 0)
+        if for_parse:
+            self.import_panel.set_busy(True)
+            if indeterminate:
+                self.import_panel.set_progress(visible=True, current=0, total=0)
+            else:
+                self.import_panel.set_progress(visible=True, current=0, total=100)
         else:
-            progress.setRange(0, 100)
+            self.report_panel.set_progress_visible(True)
+            if indeterminate:
+                self.report_panel.progress.setRange(0, 0)
+            else:
+                self.report_panel.progress.setRange(0, 100)
         if status:
             self._set_status(status, parse=for_parse)
+        if on_start:
+            on_start()
         if on_progress:
             worker.progress.connect(on_progress)
-        worker.finished_ok.connect(lambda payload=None: self._worker_done(on_ok, payload))
-        worker.failed.connect(self._worker_failed)
+        worker.finished_ok.connect(lambda payload=None: self._worker_done(on_ok, payload, for_parse=for_parse))
+        worker.failed.connect(lambda message: self._worker_failed(message, for_parse=for_parse))
         worker.start()
 
-    def _active_progress(self, *, parse: bool = False) -> QProgressBar:
-        return self.parse_progress if parse else self.report_progress
-
-    def _worker_done(self, callback, payload) -> None:
-        self.parse_progress.setVisible(False)
-        self.report_progress.setVisible(False)
-        self.parse_progress.setRange(0, 100)
-        self.report_progress.setRange(0, 100)
+    def _worker_done(self, callback, payload, *, for_parse: bool = False) -> None:
+        if for_parse:
+            self.import_panel.set_progress(visible=False)
+            self.import_panel.set_busy(False)
+        else:
+            self.report_panel.set_progress_visible(False)
+            self.report_panel.progress.setRange(0, 100)
         self._active_worker = None
+        if for_parse and self._parsing_dates:
+            self._clear_parsing(success=True)
         if callback:
             callback(payload) if payload is not None else callback()
 
-    def _worker_failed(self, message: str) -> None:
-        self.parse_progress.setVisible(False)
-        self.report_progress.setVisible(False)
-        self.parse_progress.setRange(0, 100)
-        self.report_progress.setRange(0, 100)
+    def _worker_failed(self, message: str, *, for_parse: bool = False) -> None:
+        self._last_worker_error = message
+        if for_parse:
+            self.import_panel.set_progress(visible=False)
+            self.import_panel.set_busy(False)
+        else:
+            self.report_panel.set_progress_visible(False)
+            self.report_panel.progress.setRange(0, 100)
+            self.report_panel.set_status("")
+            QMessageBox.critical(self, "Error", message)
         self._active_worker = None
-        self.parse_status.setText("")
-        self.report_status.setText("")
-        QMessageBox.critical(self, "Error", message)
+        if for_parse and self._parsing_dates:
+            self._clear_parsing(success=False)
+        elif for_parse:
+            self._set_import_message(message, error=True)
 
     def _set_progress(self, current: int, total: int, label: str, *, parse: bool = False) -> None:
-        progress = self._active_progress(parse=parse)
+        if parse:
+            self.import_panel.set_progress(visible=True, current=current, total=total)
+            return
+        progress = self.report_panel.progress
         if total > 0:
             progress.setRange(0, total)
             progress.setValue(current)
@@ -627,6 +581,5 @@ class LogsTab(QWidget):
 
     def _set_status(self, text: str, *, parse: bool = False) -> None:
         if parse:
-            self.parse_status.setText(text)
-        else:
-            self.report_status.setText(text)
+            return
+        self.report_panel.set_status(text)
