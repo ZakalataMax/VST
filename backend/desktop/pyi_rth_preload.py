@@ -1,7 +1,7 @@
 import importlib
 import sys
 
-for module_name in ("uuid", "_uuid", "decimal", "datetime", "json", "zlib"):
+for module_name in ("uuid", "_uuid", "decimal", "datetime", "json", "zlib", "openpyxl"):
     try:
         importlib.import_module(module_name)
     except ImportError:

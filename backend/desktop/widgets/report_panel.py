@@ -6,7 +6,6 @@ from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -27,13 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.services.report import (
-    PivotTable,
-    default_pivot_fields,
-    format_report_cell_value,
-    format_report_datetime_field,
-    pivot_table_to_rows,
-)
+from app.services.report import format_report_cell_value, format_report_datetime_field
 from desktop.report_sql_utils import build_report_sql_from_filters
 from desktop.report_table_utils import default_column_width, should_elide
 from desktop.widgets.common import ghost_button, primary_button, secondary_button
@@ -153,8 +146,6 @@ class ReportPanel(QWidget):
     run_requested = Signal()
     export_requested = Signal()
     load_more_requested = Signal()
-    pivot_requested = Signal(str, str)
-    detail_view_restored = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -165,11 +156,8 @@ class ReportPanel(QWidget):
         self._custom_sql_text = ""
         self._sql_manual = False
         self._syncing_filters = False
-        self._syncing_pivot_fields = False
         self._custom_sql_dialog: CustomSqlDialog | None = None
         self._has_results = False
-        self._view_mode = "detail"
-        self._detail_rows: list[dict] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -295,40 +283,6 @@ class ReportPanel(QWidget):
         self.shown_badge.setVisible(False)
         results_bar_layout.addWidget(self.shown_badge)
 
-        self.view_mode = QComboBox()
-        self.view_mode.setObjectName("ReportField")
-        self.view_mode.addItem("Detail", "detail")
-        self.view_mode.addItem("Pivot", "pivot")
-        self.view_mode.setFixedHeight(28)
-        self.view_mode.setMinimumWidth(88)
-        self.view_mode.currentIndexChanged.connect(self._on_view_mode_changed)
-        self.view_mode.setVisible(False)
-        results_bar_layout.addWidget(self.view_mode)
-
-        self.pivot_row_field = QComboBox()
-        self.pivot_row_field.setObjectName("ReportField")
-        self.pivot_row_field.setFixedHeight(28)
-        self.pivot_row_field.setMinimumWidth(140)
-        self.pivot_row_field.currentIndexChanged.connect(self._on_pivot_fields_changed)
-        self.pivot_row_field.setVisible(False)
-        results_bar_layout.addWidget(self.pivot_row_field)
-
-        pivot_by = QLabel("×")
-        pivot_by.setObjectName("ReportRangeDash")
-        pivot_by.setFixedWidth(10)
-        pivot_by.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pivot_by.setVisible(False)
-        self._pivot_by_label = pivot_by
-        results_bar_layout.addWidget(pivot_by)
-
-        self.pivot_col_field = QComboBox()
-        self.pivot_col_field.setObjectName("ReportField")
-        self.pivot_col_field.setFixedHeight(28)
-        self.pivot_col_field.setMinimumWidth(140)
-        self.pivot_col_field.currentIndexChanged.connect(self._on_pivot_fields_changed)
-        self.pivot_col_field.setVisible(False)
-        results_bar_layout.addWidget(self.pivot_col_field)
-
         results_bar_layout.addStretch()
         self.close_results_btn = QToolButton()
         self.close_results_btn.setObjectName("ReportCloseButton")
@@ -416,14 +370,10 @@ class ReportPanel(QWidget):
         self.set_shown_rows(0, 0)
         self.set_load_more_enabled(False)
         self._has_results = False
-        self._view_mode = "detail"
-        self._sync_view_mode_combo()
-        self._sync_pivot_controls_visible(None, None)
         self.report_table.clear()
         self.report_table.setRowCount(0)
         self.report_table.setColumnCount(0)
         self._report_columns = []
-        self._detail_rows = []
         self.set_status("")
         self._sync_content_view()
 
@@ -478,51 +428,6 @@ class ReportPanel(QWidget):
 
     def render_table(self, columns: list[str], rows: list[dict]) -> None:
         self._report_columns = columns
-        self._detail_rows = list(rows)
-        self._configure_pivot_fields(columns)
-        if self._view_mode == "pivot":
-            self._request_pivot()
-            return
-        self._render_detail_table(columns, rows)
-        self._sync_pivot_controls_visible(*default_pivot_fields(columns))
-
-    def render_pivot(self, pivot: PivotTable, *, total_rows: int) -> None:
-        headers, body = pivot_table_to_rows(pivot)
-        self.report_table.clear()
-        self.report_table.setColumnCount(len(headers))
-        self.report_table.setRowCount(len(body))
-        self.report_table.setHorizontalHeaderLabels(headers)
-
-        bold = QFont("Segoe UI", 9)
-        bold.setBold(True)
-        total_columns = len(headers)
-
-        for row_index, row in enumerate(body):
-            is_total_row = row_index == len(body) - 1
-            for col_index, value in enumerate(row):
-                text = f"{value:,}" if isinstance(value, int) else str(value)
-                item = QTableWidgetItem(text)
-                if col_index == 0:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                else:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if is_total_row or col_index == total_columns - 1:
-                    item.setFont(bold)
-                self.report_table.setItem(row_index, col_index, item)
-
-        self._apply_pivot_column_widths(headers)
-        self._has_results = True
-        self._sync_content_view()
-        row_field, col_field = default_pivot_fields(self._report_columns)
-        self._sync_pivot_controls_visible(row_field, col_field)
-        self.shown_badge.setVisible(False)
-        self.set_status(
-            f"Pivot: {pivot.row_field} × {pivot.col_field} · {total_rows:,} transactions"
-        )
-        self.set_load_more_enabled(False)
-        self.set_shown_rows(0, total_rows)
-
-    def _render_detail_table(self, columns: list[str], rows: list[dict]) -> None:
         self.report_table.clear()
         self.report_table.setColumnCount(len(columns))
         self.report_table.setRowCount(len(rows))
@@ -549,71 +454,6 @@ class ReportPanel(QWidget):
         self._apply_column_widths(columns)
         self._has_results = True
         self._sync_content_view()
-
-    def _configure_pivot_fields(self, columns: list[str]) -> None:
-        default_row, default_col = default_pivot_fields(columns)
-        if not default_row or not default_col:
-            return
-        self._syncing_pivot_fields = True
-        self.pivot_row_field.clear()
-        self.pivot_col_field.clear()
-        for column in columns:
-            self.pivot_row_field.addItem(column, column)
-            self.pivot_col_field.addItem(column, column)
-        self.pivot_row_field.setCurrentIndex(self.pivot_row_field.findData(default_row))
-        self.pivot_col_field.setCurrentIndex(self.pivot_col_field.findData(default_col))
-        self._syncing_pivot_fields = False
-
-    def _sync_pivot_controls_visible(self, row_field: str | None, col_field: str | None) -> None:
-        visible = bool(row_field and col_field)
-        self.view_mode.setVisible(visible)
-        show_pivot_fields = visible and self._view_mode == "pivot"
-        self.pivot_row_field.setVisible(show_pivot_fields)
-        self.pivot_col_field.setVisible(show_pivot_fields)
-        self._pivot_by_label.setVisible(show_pivot_fields)
-
-    def _sync_view_mode_combo(self) -> None:
-        index = self.view_mode.findData(self._view_mode)
-        if index >= 0:
-            self.view_mode.setCurrentIndex(index)
-
-    def _on_view_mode_changed(self) -> None:
-        self._view_mode = self.view_mode.currentData()
-        row_field, col_field = default_pivot_fields(self._report_columns)
-        self._sync_pivot_controls_visible(row_field, col_field)
-        if not self._has_results:
-            return
-        if self._view_mode == "pivot":
-            self._request_pivot()
-            return
-        if self._detail_rows:
-            self._render_detail_table(self._report_columns, self._detail_rows)
-        self.shown_badge.setVisible(True)
-        self.detail_view_restored.emit()
-
-    def _on_pivot_fields_changed(self) -> None:
-        if self._syncing_pivot_fields or self._view_mode != "pivot" or not self._has_results:
-            return
-        self._request_pivot()
-
-    def _request_pivot(self) -> None:
-        row_field = self.pivot_row_field.currentData()
-        col_field = self.pivot_col_field.currentData()
-        if not row_field or not col_field:
-            return
-        if row_field == col_field:
-            self.set_status("Pivot row and column must be different.")
-            return
-        self.pivot_requested.emit(str(row_field), str(col_field))
-
-    def _apply_pivot_column_widths(self, headers: list[str]) -> None:
-        header = self.report_table.horizontalHeader()
-        for index, name in enumerate(headers):
-            width = 96 if index == 0 else max(72, min(120, len(name) * 9 + 28))
-            self.report_table.setColumnWidth(index, width)
-        header.setStretchLastSection(False)
-        if headers:
-            self.report_table.setColumnWidth(len(headers) - 1, 72)
 
     def _filter_values(self) -> tuple[str, str, str, bool]:
         return (

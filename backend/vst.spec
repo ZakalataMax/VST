@@ -21,6 +21,11 @@ stdlib_hiddenimports = [
 ]
 
 hiddenimports = [
+    "openpyxl",
+    "openpyxl.cell",
+    "openpyxl.cell._writer",
+    "openpyxl.workbook",
+    "openpyxl.worksheet._writer",
     "desktop.main_window",
     "desktop.tabs.parser_tab",
     "desktop.tabs.logs_tab",

@@ -7,7 +7,7 @@ from PySide6.QtCore import QThread, Signal
 
 from app.parsers.acs_log_parser import parse_log_files
 from app.services.csv_storage import delete_csv_day, save_daily_csvs
-from app.services.file_report import export_report_xlsx, run_report_pivot, run_report_query
+from app.services.file_report import export_report_xlsx, run_report_query
 from app.services.log_storage import delete_log_day, make_file_id, read_log_files_by_ids, save_upload
 from desktop.coverage_utils import sort_log_paths_for_upload
 
@@ -127,22 +127,6 @@ class ReportExportWorker(QThread):
     def run(self) -> None:
         try:
             result = export_report_xlsx(**self._kwargs)
-            self.finished_ok.emit(result)
-        except Exception as error:
-            self.failed.emit(str(error))
-
-
-class ReportPivotWorker(QThread):
-    finished_ok = Signal(object)
-    failed = Signal(str)
-
-    def __init__(self, **kwargs) -> None:
-        super().__init__()
-        self._kwargs = kwargs
-
-    def run(self) -> None:
-        try:
-            result = run_report_pivot(**self._kwargs)
             self.finished_ok.emit(result)
         except Exception as error:
             self.failed.emit(str(error))

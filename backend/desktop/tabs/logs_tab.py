@@ -31,7 +31,6 @@ from desktop.workers import (
     DeleteDayWorker,
     ParseLogsWorker,
     ReportExportWorker,
-    ReportPivotWorker,
     ReportRunWorker,
     UploadLogsWorker,
 )
@@ -101,8 +100,6 @@ class LogsTab(QWidget):
         self.report_panel.run_requested.connect(self._run_report)
         self.report_panel.export_requested.connect(self._export_report)
         self.report_panel.load_more_requested.connect(self._load_more_report)
-        self.report_panel.pivot_requested.connect(self._run_report_pivot)
-        self.report_panel.detail_view_restored.connect(self._restore_detail_view_state)
         return self.report_panel
 
     def refresh_data(self) -> None:
@@ -455,30 +452,6 @@ class LogsTab(QWidget):
         self.report_panel.set_shown_rows(shown, self._report_total)
         self.report_panel.set_status(f"Preview: {shown:,} of {self._report_total:,} rows")
         self.report_panel.set_load_more_enabled(shown < self._report_total)
-
-    def _restore_detail_view_state(self) -> None:
-        shown = len(self._report_rows)
-        self.report_panel.set_shown_rows(shown, self._report_total)
-        self.report_panel.set_status(f"Preview: {shown:,} of {self._report_total:,} rows")
-        self.report_panel.set_load_more_enabled(shown < self._report_total)
-
-    def _run_report_pivot(self, row_field: str, col_field: str) -> None:
-        try:
-            kwargs = self._report_kwargs()
-        except ValueError as error:
-            QMessageBox.warning(self, "Report", str(error))
-            return
-        kwargs["row_field"] = row_field
-        kwargs["col_field"] = col_field
-        self._start_worker(
-            ReportPivotWorker(**kwargs),
-            indeterminate=True,
-            on_ok=self._on_report_pivot,
-            status="Building pivot…",
-        )
-
-    def _on_report_pivot(self, pivot) -> None:
-        self.report_panel.render_pivot(pivot, total_rows=self._report_total)
 
     def _export_report(self) -> None:
         try:
