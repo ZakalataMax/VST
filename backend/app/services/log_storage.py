@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.parsers.acs_log_parser import _detect_acs_node
+from app.parsers.patterns import TIMESTAMP_RE
 from app.paths import get_log_storage_dir
 
 
@@ -188,3 +189,24 @@ def delete_log_file(file_id: str) -> None:
 
     if day_dir.exists() and not any(day_dir.iterdir()):
         day_dir.rmdir()
+
+
+def scan_log_datetime_range(log_date: str) -> tuple[str, str]:
+    storage_dir = get_log_storage_dir()
+    day_dir = storage_dir / log_date
+    min_datetime = ""
+    max_datetime = ""
+    for acs_node in ("acs1", "acs2"):
+        log_path = day_dir / f"{acs_node}.log"
+        if not log_path.exists():
+            continue
+        for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            match = TIMESTAMP_RE.match(line)
+            if not match:
+                continue
+            timestamp = match.group(1)
+            if not min_datetime or timestamp < min_datetime:
+                min_datetime = timestamp
+            if not max_datetime or timestamp > max_datetime:
+                max_datetime = timestamp
+    return min_datetime, max_datetime

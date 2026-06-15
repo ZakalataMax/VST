@@ -15,6 +15,7 @@ CSV_TO_DB: dict[str, str] = {
     "messageType": "messagetype",
     "messageDirection": "messagedirection",
     "threeDSServerTransID": "threedsservertransid",
+    "acsTransID": "acstransid",
     "transType": "transtype",
     "transStatus": "transstatus",
     "transStatusReason": "transstatusreason",

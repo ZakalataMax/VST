@@ -14,19 +14,19 @@ CHALLENGE_ANSWER_RE = re.compile(
     r"Incoming message: \[ChallengeAnswerRequest: \{([^}]*)\}\]\.?\s*$"
 )
 CHALLENGE_METHOD_RE = re.compile(
-    r"Handling challenge response data for 3DSS txn\[([^\]]+)\], ACS txn\[[^\]]+\], method\[([^\[]+)\[code='(\d+)'\]\]\."
+    r"Handling challenge response data for 3DSS txn\[([^\]]+)\], ACS txn\[([^\]]+)\], method\[([^\[]+)\[code='(\d+)'\]\]\."
 )
 CHALLENGE_SUCCEEDED_RE = re.compile(
-    r"Challenge is succeeded \(OK\) for acsTxnId=[^,]+, tdssTxnId=([0-9a-f-]+)\."
+    r"Challenge is succeeded \(OK\) for acsTxnId=([^,]+), tdssTxnId=([0-9a-f-]+)\."
 )
 CHALLENGE_NOT_ACCEPTED_RE = re.compile(
-    r"Challenge answer is not accepted for acsTxnId=[^,]+, tdssTxnId=([0-9a-f-]+)\."
+    r"Challenge answer is not accepted for acsTxnId=([^,]+), tdssTxnId=([0-9a-f-]+)\."
 )
 CHALLENGE_EXPIRING_RE = re.compile(
-    r"Challenge is expiring for acsTxnId=[^,]+, tdssTxnId=([0-9a-f-]+)\."
+    r"Challenge is expiring for acsTxnId=([^,]+), tdssTxnId=([0-9a-f-]+)\."
 )
 AUTH_METHOD_SWITCH_RE = re.compile(
-    r"Switch auth method for transaction \[acsTxnId=([0-9a-f-]+)\] \[tdssTxnId=[^\]]+\] from \[[^\[]+\[code='(\d+)'\]\] to \[[^\[]+\[code='(\d+)'\]\]\."
+    r"Switch auth method for transaction \[acsTxnId=([0-9a-f-]+)\] \[tdssTxnId=([0-9a-f-]+)\] from \[[^\[]+\[code='(\d+)'\]\] to \[[^\[]+\[code='(\d+)'\]\]\."
 )
 CREQ_STARTED_RE = re.compile(
     r"Started processing of browser challenge request for 3DS Server txn id: \[([0-9a-f-]+)\]\."

@@ -6,6 +6,7 @@ from app.parsers.models import MessageRow
 
 JSON_FIELD_MAP = {
     "threeDSServerTransID": "three_ds_server_trans_id",
+    "acsTransID": "acs_trans_id",
     "transType": "trans_type",
     "transStatus": "trans_status",
     "transStatusReason": "trans_status_reason",
@@ -44,6 +45,10 @@ def apply_json_payload(row: MessageRow, payload: dict[str, Any]) -> None:
     trans_id = payload.get("threeDSServerTransID") or payload.get("tdssTxnId")
     if trans_id:
         row.three_ds_server_trans_id = _as_str(trans_id)
+
+    acs_id = payload.get("acsTransID") or payload.get("acsTxnId")
+    if acs_id:
+        row.acs_trans_id = _as_str(acs_id)
 
     for json_key, attr in JSON_FIELD_MAP.items():
         if json_key in payload and payload[json_key] is not None:

@@ -8,6 +8,7 @@ CSV_COLUMNS = [
     "messageType",
     "messageDirection",
     "threeDSServerTransID",
+    "acsTransID",
     "transType",
     "transStatus",
     "transStatusReason",
@@ -65,6 +66,7 @@ class MessageRow:
     message_type: str
     message_direction: str = ""
     three_ds_server_trans_id: str = ""
+    acs_trans_id: str = ""
     trans_type: str = ""
     trans_status: str = ""
     trans_status_reason: str = ""
@@ -102,6 +104,7 @@ class MessageRow:
             "messageType": self.message_type,
             "messageDirection": self.message_direction,
             "threeDSServerTransID": self.three_ds_server_trans_id,
+            "acsTransID": self.acs_trans_id,
             "transType": self.trans_type,
             "transStatus": self.trans_status,
             "transStatusReason": self.trans_status_reason,

@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
 from app.paths import get_report_output_dir
 from app.services.report import validate_report_range
 from app.services.csv_storage import list_csv_days
-from app.services.log_storage import list_log_days, list_log_files
+from app.services.csv_storage import delete_csv_day
+from app.services.log_storage import list_log_days, list_log_files, scan_log_datetime_range
 from desktop.coverage_utils import (
     STATUS_READY,
     build_coverage_days,
@@ -305,27 +306,37 @@ class LogsTab(QWidget):
             self._last_upload_date = max(uploaded_dates)
         for upload_date in uploaded_dates:
             self._failed_dates.pop(upload_date, None)
-        ready_dates, skip_messages = self._upload_parse_plan(uploaded_dates)
+        ready_dates, reparse_days, skip_messages = self._upload_parse_plan(uploaded_dates)
         self._import_skip_messages = skip_messages + upload_errors
         if self._import_skip_messages:
             self._sync_import_message()
-        if ready_dates:
-            self._parse_dates(ready_dates)
-        elif not self._import_skip_messages:
+        parse_dates = list(ready_dates)
+        if reparse_days and self._confirm_reparse(reparse_days):
+            for item in reparse_days:
+                delete_csv_day(item["date"])
+                parse_dates.append(item["date"])
+        elif reparse_days:
+            self._set_import_message(
+                "Upload complete. Re-parse cancelled — existing parsed data kept.",
+                error=False,
+            )
+        if parse_dates:
+            self._parse_dates(parse_dates)
+        elif not self._import_skip_messages and not reparse_days:
             self._set_import_message("Upload complete.", error=False)
         if self._last_upload_date:
             self._select_day(self._last_upload_date)
 
-    def _upload_parse_plan(self, uploaded_dates: set[str]) -> tuple[list[str], list[str]]:
+    def _upload_parse_plan(
+        self, uploaded_dates: set[str]
+    ) -> tuple[list[str], list[dict], list[str]]:
         day_by_date = {day["date"]: day for day in self._coverage_days}
         ready_dates: list[str] = []
+        reparse_days: list[dict] = []
         skip_messages: list[str] = []
         for date in sorted(uploaded_dates):
             day = day_by_date.get(date)
             if not day:
-                continue
-            if day.get("status") == STATUS_READY:
-                ready_dates.append(date)
                 continue
             log_day = day.get("log_day") or {}
             missing = _missing_acs_nodes(log_day)
@@ -333,7 +344,63 @@ class LogsTab(QWidget):
                 skip_messages.append(
                     f"{date}: missing {', '.join(missing)} log — parsing skipped"
                 )
-        return ready_dates, skip_messages
+                continue
+            csv_day = day.get("csv_day")
+            if not csv_day:
+                ready_dates.append(date)
+                continue
+            log_min, log_max = scan_log_datetime_range(date)
+            if not log_max:
+                skip_messages.append(f"{date}: uploaded logs have no timestamps — parsing skipped")
+                continue
+            csv_min = str(csv_day.get("minDateTime") or "")
+            csv_max = str(csv_day.get("maxDateTime") or "")
+            if log_max <= csv_max and (not csv_min or log_min >= csv_min):
+                continue
+            reparse_days.append(
+                {
+                    "date": date,
+                    "csv_min": csv_min,
+                    "csv_max": csv_max,
+                    "log_min": log_min,
+                    "log_max": log_max,
+                }
+            )
+        return ready_dates, reparse_days, skip_messages
+
+    def _confirm_reparse(self, reparse_days: list[dict]) -> bool:
+        lines: list[str] = []
+        for item in reparse_days:
+            parsed_range = self._format_datetime_range(item["csv_min"], item["csv_max"])
+            log_range = self._format_datetime_range(item["log_min"], item["log_max"])
+            lines.append(
+                f"{item['date']}\n"
+                f"  Parsed: {parsed_range}\n"
+                f"  New logs: {log_range}"
+            )
+        body = (
+            "Uploaded logs extend beyond the existing parse.\n\n"
+            + "\n\n".join(lines)
+            + "\n\nDelete parsed CSV and re-parse these day(s)?"
+        )
+        reply = QMessageBox.question(
+            self,
+            "Re-parse day",
+            body,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    @staticmethod
+    def _format_datetime_range(min_value: str, max_value: str) -> str:
+        if min_value and max_value:
+            return f"{min_value} – {max_value}"
+        if max_value:
+            return f"until {max_value}"
+        if min_value:
+            return f"from {min_value}"
+        return "—"
 
     def _sync_import_message(self) -> None:
         lines = list(self._import_skip_messages)

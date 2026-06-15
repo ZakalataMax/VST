@@ -117,20 +117,31 @@ timeline AS (
     FROM event_token et
     WHERE et.token IS NOT NULL
     GROUP BY et.threedsservertransid
+),
+acs_id AS (
+    SELECT
+        ds.threedsservertransid,
+        max(ds.acstransid) AS acs_trans_id
+    FROM cust_acs_3dsmess ds
+    WHERE coalesce(ds.acstransid, '') != ''
+    GROUP BY ds.threedsservertransid
 )
 SELECT
-    areq.messagedatetime AS areq_messagedatetime,
     substr(areq.messagedatetime, 9, 2) || '.' || substr(areq.messagedatetime, 6, 2) || '.' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
-    areq.threedsservertransid,
+    'CRES: ' || COALESCE(cres.transstatus, 'NULL')
+        || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
+    timeline.txn_timeline,
     areq.browseruseragent AS browser_user_agent,
+    areq.merchantname AS merchant_name,
+    areq.threedsservertransid,
+    acs_id.acs_trans_id,
+    areq.messagedatetime AS areq_messagedatetime,
     CASE
         WHEN areq.acctnumber LIKE '4%%' THEN 'Visa'
         WHEN areq.acctnumber LIKE '5%%' THEN 'MC'
     END AS card_scheme,
     'ARES: ' || COALESCE(ares.transstatus, 'NULL')
         || '+' || COALESCE(ares.transstatusreason, 'NULL') AS ares_status,
-    'CRES: ' || COALESCE(cres.transstatus, 'NULL')
-        || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
     CASE
         WHEN timeline.txn_timeline LIKE '%%Erro(%%' THEN 'Erro'
         WHEN timeline.txn_timeline LIKE '%%Challenge expired%%' THEN 'Timeout'
@@ -141,15 +152,14 @@ SELECT
         WHEN timeline.txn_timeline LIKE '%%OobInitReq%%' THEN 'OOB_started'
         ELSE 'Other'
     END AS txn_result,
-    timeline.txn_timeline,
     erro.errorcode,
-    areq.acctnumber AS acct_number,
-    areq.merchantname AS merchant_name
+    areq.acctnumber AS acct_number
 FROM areq
 LEFT JOIN ares ON areq.threedsservertransid = ares.threedsservertransid
 LEFT JOIN cres ON areq.threedsservertransid = cres.threedsservertransid
 LEFT JOIN timeline ON areq.threedsservertransid = timeline.threedsservertransid
 LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
+LEFT JOIN acs_id ON areq.threedsservertransid = acs_id.threedsservertransid
 WHERE (%(txn_id)s::text IS NULL OR areq.threedsservertransid = %(txn_id)s::text)
   AND areq.messagedatetime >= %(date_from)s::text
   AND (%(date_to)s::text IS NULL OR areq.messagedatetime <= %(date_to)s::text)

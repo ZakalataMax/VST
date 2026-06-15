@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS cust_acs_3dsmess (
     messagetype TEXT,
     messagedirection TEXT,
     threedsservertransid TEXT,
+    acstransid TEXT,
     transtype TEXT,
     transstatus TEXT,
     transstatusreason TEXT,

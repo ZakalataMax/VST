@@ -127,8 +127,9 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "ChallengeMethod"
         row.three_ds_server_trans_id = challenge_method_match.group(1)
-        row.challenge_method = challenge_method_match.group(2)
-        row.challenge_method_code = challenge_method_match.group(3)
+        row.acs_trans_id = challenge_method_match.group(2)
+        row.challenge_method = challenge_method_match.group(3)
+        row.challenge_method_code = challenge_method_match.group(4)
         return [row]
 
     challenge_answer_match = CHALLENGE_ANSWER_RE.search(line)
@@ -139,7 +140,7 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "ChallengeAnswer"
         row.message_direction = "In"
-        row.three_ds_server_trans_id = pairs.get("acs_ops_data", "")
+        row.acs_trans_id = pairs.get("acs_txn_id", "").strip()
         row.challenge_submit = pairs.get("submit", "")
         return [row]
 
@@ -147,7 +148,8 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
     if challenge_succeeded_match:
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "ChallengeOutcome"
-        row.three_ds_server_trans_id = challenge_succeeded_match.group(1)
+        row.acs_trans_id = challenge_succeeded_match.group(1).strip()
+        row.three_ds_server_trans_id = challenge_succeeded_match.group(2)
         row.is_challenge_succeeded = "true"
         return [row]
 
@@ -155,7 +157,8 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
     if challenge_not_accepted_match:
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "ChallengeOutcome"
-        row.three_ds_server_trans_id = challenge_not_accepted_match.group(1)
+        row.acs_trans_id = challenge_not_accepted_match.group(1).strip()
+        row.three_ds_server_trans_id = challenge_not_accepted_match.group(2)
         row.is_challenge_succeeded = "false"
         return [row]
 
@@ -163,7 +166,8 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
     if challenge_expiring_match:
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "ChallengeExpiring"
-        row.three_ds_server_trans_id = challenge_expiring_match.group(1)
+        row.acs_trans_id = challenge_expiring_match.group(1).strip()
+        row.three_ds_server_trans_id = challenge_expiring_match.group(2)
         row.is_challenge_expired = "true"
         return [row]
 
@@ -171,8 +175,9 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
     if auth_switch_match:
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "AuthMethodSwitch"
-        row.three_ds_server_trans_id = auth_switch_match.group(1)
-        row.auth_method_switch = f"{auth_switch_match.group(2)}->{auth_switch_match.group(3)}"
+        row.acs_trans_id = auth_switch_match.group(1)
+        row.three_ds_server_trans_id = auth_switch_match.group(2)
+        row.auth_method_switch = f"{auth_switch_match.group(3)}->{auth_switch_match.group(4)}"
         return [row]
 
     for regex, direction, message_type in (
