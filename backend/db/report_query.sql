@@ -135,15 +135,31 @@ oob_init AS (
     WHERE ds.messagetype IN ('OobInitRequest', 'OobInitResponse')
       AND ds.threedsservertransid IS NOT NULL
     GROUP BY ds.threedsservertransid
+),
+oob_missing_day AS (
+    SELECT
+        substr(a.messagedatetime, 1, 10) AS day,
+        count(*) FILTER (
+            WHERE COALESCE(o.oob_init_req_count, 0) > COALESCE(o.oob_init_resp_count, 0)
+        ) AS oob_missing_day
+    FROM areq a
+    LEFT JOIN oob_init o ON a.threedsservertransid = o.threedsservertransid
+    GROUP BY substr(a.messagedatetime, 1, 10)
 )
 SELECT
     substr(areq.messagedatetime, 9, 2) || '.' || substr(areq.messagedatetime, 6, 2) || '.' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
+    COALESCE(oob_missing_day.oob_missing_day, 0) AS oob_missing_day,
     'CRES: ' || COALESCE(cres.transstatus, 'NULL')
         || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
     timeline.txn_timeline,
     areq.browseruseragent AS browser_user_agent,
     areq.merchantname AS merchant_name,
     areq.threedsservertransid,
+    CASE
+        WHEN COALESCE(oob_init.oob_init_req_count, 0) > COALESCE(oob_init.oob_init_resp_count, 0)
+        THEN 1
+        ELSE 0
+    END AS oob_missing,
     acs_id.acs_trans_id,
     areq.messagedatetime AS areq_messagedatetime,
     CASE
@@ -162,12 +178,6 @@ SELECT
         WHEN timeline.txn_timeline LIKE '%%OobInitReq%%' THEN 'OOB_started'
         ELSE 'Other'
     END AS txn_result,
-    COALESCE(oob_init.oob_init_req_count, 0) AS oob_init_req_count,
-    COALESCE(oob_init.oob_init_resp_count, 0) AS oob_init_resp_count,
-    greatest(
-        COALESCE(oob_init.oob_init_req_count, 0) - COALESCE(oob_init.oob_init_resp_count, 0),
-        0
-    ) AS oob_init_missing_resp_count,
     erro.errorcode,
     areq.acctnumber AS acct_number
 FROM areq
@@ -177,6 +187,7 @@ LEFT JOIN timeline ON areq.threedsservertransid = timeline.threedsservertransid
 LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
 LEFT JOIN acs_id ON areq.threedsservertransid = acs_id.threedsservertransid
 LEFT JOIN oob_init ON areq.threedsservertransid = oob_init.threedsservertransid
+LEFT JOIN oob_missing_day ON substr(areq.messagedatetime, 1, 10) = oob_missing_day.day
 WHERE (%(txn_id)s::text IS NULL OR areq.threedsservertransid = %(txn_id)s::text)
   AND areq.messagedatetime >= %(date_from)s::text
   AND (%(date_to)s::text IS NULL OR areq.messagedatetime <= %(date_to)s::text)
