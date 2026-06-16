@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root/backend"
+
+echo "Running parser ID mapping tests..."
+python -m unittest discover -s tests -p "test_*.py" -v

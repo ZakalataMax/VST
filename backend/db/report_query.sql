@@ -125,6 +125,16 @@ acs_id AS (
     FROM cust_acs_3dsmess ds
     WHERE coalesce(ds.acstransid, '') != ''
     GROUP BY ds.threedsservertransid
+),
+oob_init AS (
+    SELECT
+        ds.threedsservertransid,
+        count(*) FILTER (WHERE ds.messagetype = 'OobInitRequest') AS oob_init_req_count,
+        count(*) FILTER (WHERE ds.messagetype = 'OobInitResponse') AS oob_init_resp_count
+    FROM cust_acs_3dsmess ds
+    WHERE ds.messagetype IN ('OobInitRequest', 'OobInitResponse')
+      AND ds.threedsservertransid IS NOT NULL
+    GROUP BY ds.threedsservertransid
 )
 SELECT
     substr(areq.messagedatetime, 9, 2) || '.' || substr(areq.messagedatetime, 6, 2) || '.' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
@@ -152,6 +162,12 @@ SELECT
         WHEN timeline.txn_timeline LIKE '%%OobInitReq%%' THEN 'OOB_started'
         ELSE 'Other'
     END AS txn_result,
+    COALESCE(oob_init.oob_init_req_count, 0) AS oob_init_req_count,
+    COALESCE(oob_init.oob_init_resp_count, 0) AS oob_init_resp_count,
+    greatest(
+        COALESCE(oob_init.oob_init_req_count, 0) - COALESCE(oob_init.oob_init_resp_count, 0),
+        0
+    ) AS oob_init_missing_resp_count,
     erro.errorcode,
     areq.acctnumber AS acct_number
 FROM areq
@@ -160,6 +176,7 @@ LEFT JOIN cres ON areq.threedsservertransid = cres.threedsservertransid
 LEFT JOIN timeline ON areq.threedsservertransid = timeline.threedsservertransid
 LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
 LEFT JOIN acs_id ON areq.threedsservertransid = acs_id.threedsservertransid
+LEFT JOIN oob_init ON areq.threedsservertransid = oob_init.threedsservertransid
 WHERE (%(txn_id)s::text IS NULL OR areq.threedsservertransid = %(txn_id)s::text)
   AND areq.messagedatetime >= %(date_from)s::text
   AND (%(date_to)s::text IS NULL OR areq.messagedatetime <= %(date_to)s::text)

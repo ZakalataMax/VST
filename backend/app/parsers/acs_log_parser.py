@@ -175,8 +175,10 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
     if auth_switch_match:
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "AuthMethodSwitch"
-        row.acs_trans_id = auth_switch_match.group(1)
-        row.three_ds_server_trans_id = auth_switch_match.group(2)
+        # ACS log labels are swapped here only: acsTxnId holds 3DS Server ID, tdssTxnId holds ACS ID.
+        # Do not use the same group(1)->acs / group(2)->3ds mapping as Challenge succeeded/expiring.
+        row.three_ds_server_trans_id = auth_switch_match.group(1)
+        row.acs_trans_id = auth_switch_match.group(2)
         row.auth_method_switch = f"{auth_switch_match.group(3)}->{auth_switch_match.group(4)}"
         return [row]
 

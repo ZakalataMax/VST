@@ -25,6 +25,7 @@ CHALLENGE_NOT_ACCEPTED_RE = re.compile(
 CHALLENGE_EXPIRING_RE = re.compile(
     r"Challenge is expiring for acsTxnId=([^,]+), tdssTxnId=([0-9a-f-]+)\."
 )
+# acsTxnId/tdssTxnId values are swapped vs other ACS log lines (see AuthMethodSwitch in acs_log_parser.py).
 AUTH_METHOD_SWITCH_RE = re.compile(
     r"Switch auth method for transaction \[acsTxnId=([0-9a-f-]+)\] \[tdssTxnId=([0-9a-f-]+)\] from \[[^\[]+\[code='(\d+)'\]\] to \[[^\[]+\[code='(\d+)'\]\]\."
 )
