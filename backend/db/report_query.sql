@@ -157,14 +157,14 @@ SELECT
     timeline.txn_timeline,
     areq.browseruseragent AS browser_user_agent,
     areq.merchantname AS merchant_name,
-    areq.threedsrequestorurl AS three_ds_requestor_url,
-    areq.threedsserverurl AS three_ds_server_url,
-    areq.threedsrequestorname AS three_ds_requestor_name,
+    'URL: ' || COALESCE(areq.threedsrequestorurl, 'NULL')
+        || ' | Server: ' || COALESCE(areq.threedsserverurl, 'NULL')
+        || ' | Requestor: ' || COALESCE(areq.threedsrequestorname, 'NULL') AS three_ds_requestor_info,
     areq.threedsservertransid,
     CASE
         WHEN COALESCE(oob_init.oob_init_req_count, 0) > COALESCE(oob_init.oob_init_resp_count, 0)
-        THEN 1
-        ELSE 0
+        THEN 'YES'
+        ELSE NULL
     END AS oob_missing,
     acs_id.acs_trans_id,
     areq.messagedatetime AS areq_messagedatetime,
