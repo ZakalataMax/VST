@@ -5,7 +5,10 @@ areq AS (
         ds.threedsservertransid,
         ds.acctnumber,
         ds.merchantname,
-        ds.browseruseragent
+        ds.browseruseragent,
+        ds.threedsrequestorurl,
+        ds.threedsserverurl,
+        ds.threedsrequestorname
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'AReq'
 ),
@@ -154,6 +157,9 @@ SELECT
     timeline.txn_timeline,
     areq.browseruseragent AS browser_user_agent,
     areq.merchantname AS merchant_name,
+    areq.threedsrequestorurl AS three_ds_requestor_url,
+    areq.threedsserverurl AS three_ds_server_url,
+    areq.threedsrequestorname AS three_ds_requestor_name,
     areq.threedsservertransid,
     CASE
         WHEN COALESCE(oob_init.oob_init_req_count, 0) > COALESCE(oob_init.oob_init_resp_count, 0)

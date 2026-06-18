@@ -21,6 +21,9 @@ CSV_COLUMNS = [
     "challengeCompletionInd",
     "challengeCancel",
     "threeDSServerOperatorID",
+    "threeDSRequestorURL",
+    "threeDSServerURL",
+    "threeDSRequestorName",
     "acquirerMerchantID",
     "merchantName",
     "acctNumber",
@@ -79,6 +82,9 @@ class MessageRow:
     challenge_completion_ind: str = ""
     challenge_cancel: str = ""
     three_ds_server_operator_id: str = ""
+    three_ds_requestor_url: str = ""
+    three_ds_server_url: str = ""
+    three_ds_requestor_name: str = ""
     acquirer_merchant_id: str = ""
     merchant_name: str = ""
     acct_number: str = ""
@@ -117,6 +123,9 @@ class MessageRow:
             "challengeCompletionInd": self.challenge_completion_ind,
             "challengeCancel": self.challenge_cancel,
             "threeDSServerOperatorID": self.three_ds_server_operator_id,
+            "threeDSRequestorURL": self.three_ds_requestor_url,
+            "threeDSServerURL": self.three_ds_server_url,
+            "threeDSRequestorName": self.three_ds_requestor_name,
             "acquirerMerchantID": self.acquirer_merchant_id,
             "merchantName": self.merchant_name,
             "acctNumber": self.acct_number,
