@@ -30,8 +30,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(header)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(ParserTab(), "Parser")
         self.tabs.addTab(LogsTab(), "Logs")
+        self.tabs.addTab(ParserTab(), "Parser")
+        self.tabs.setCurrentIndex(0)
         layout.addWidget(self.tabs, stretch=1)
 
         self.setCentralWidget(shell)

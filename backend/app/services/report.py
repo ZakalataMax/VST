@@ -10,7 +10,16 @@ DATETIME_PATTERN = re.compile(
 ISO_DATETIME = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(.*)$")
 UNDERSCORE_DATE = re.compile(r"^(\d{2})_(\d{2})_(\d{4})$")
 FORBIDDEN_SQL = re.compile(
-    r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|COPY)\b",
+    r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|COPY|"
+    r"ATTACH|DETACH|INSTALL|LOAD|PRAGMA|SET|CALL|EXPORT|IMPORT|USE)\b",
+    re.IGNORECASE,
+)
+FORBIDDEN_FUNCTIONS = re.compile(
+    r"\b("
+    r"read_csv|read_csv_auto|read_parquet|parquet_scan|read_json|read_json_auto|"
+    r"read_json_objects|read_ndjson|read_ndjson_auto|read_text|read_blob|"
+    r"csv_scan|glob|read_csv_gz"
+    r")\s*\(",
     re.IGNORECASE,
 )
 DEFAULT_LIMIT = 500
@@ -105,9 +114,13 @@ def validate_custom_sql(sql: str) -> None:
     without_strings = _strip_sql_string_literals(cleaned)
     if ";" in without_strings:
         raise ValueError("Only a single SQL statement is allowed.")
-    if FORBIDDEN_SQL.search(cleaned):
+    if FORBIDDEN_SQL.search(without_strings):
         raise ValueError("Only SELECT queries are allowed.")
-    lowered = cleaned.lower()
+    if FORBIDDEN_FUNCTIONS.search(without_strings):
+        raise ValueError(
+            "File-access functions (read_csv, read_parquet, glob, ...) are not allowed."
+        )
+    lowered = without_strings.lower()
     if not (lowered.startswith("select") or lowered.startswith("with")):
         raise ValueError("Query must start with SELECT or WITH.")
 

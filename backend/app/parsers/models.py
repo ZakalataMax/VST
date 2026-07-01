@@ -30,6 +30,8 @@ CSV_COLUMNS = [
     "acquirerBIN",
     "browserIP",
     "browserUserAgent",
+    "browserOS",
+    "browserModel",
     "errorCode",
     "isChallengeExpired",
     "oobResultStatus",

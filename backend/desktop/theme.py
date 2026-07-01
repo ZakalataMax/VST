@@ -360,15 +360,57 @@ QListWidget::item:hover:!selected {{
     padding-top: 2px;
 }}
 
+#ImportProgressBox {{
+    background-color: transparent;
+}}
+
+#ImportProgressCaption {{
+    color: {TEXT_PRIMARY};
+    font-size: 12px;
+    font-weight: 600;
+}}
+
 #ImportProgress {{
     background-color: {BG_INPUT};
-    border: none;
-    border-radius: 2px;
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+    text-align: center;
+    color: {TEXT_PRIMARY};
+    font-size: 11px;
 }}
 
 #ImportProgress::chunk {{
     background-color: {PRIMARY};
-    border-radius: 2px;
+    border-radius: 3px;
+}}
+
+#ImportProgress[phase="download"]::chunk {{
+    background-color: {INFO};
+}}
+
+#ImportProgress[phase="parse"]::chunk {{
+    background-color: {SECONDARY};
+}}
+
+#ImportProgressCaption[phase="download"] {{
+    color: {INFO};
+}}
+
+#ImportProgressCaption[phase="parse"] {{
+    color: {SECONDARY};
+}}
+
+#ImportProgressList {{
+    background-color: transparent;
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM};
+    color: {TEXT_MUTED};
+    font-size: 12px;
+    padding: 4px;
+}}
+
+#ImportProgressList::item {{
+    padding: 2px 4px;
 }}
 
 #ImportContentArea {{

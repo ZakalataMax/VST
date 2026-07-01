@@ -20,6 +20,14 @@ stdlib_hiddenimports = [
     "encodings.idna",
 ]
 
+win32_hiddenimports = [
+    "win32com",
+    "win32com.client",
+    "win32com.client.dynamic",
+    "pythoncom",
+    "pywintypes",
+]
+
 hiddenimports = [
     "openpyxl",
     "openpyxl.cell",
@@ -47,9 +55,12 @@ hiddenimports = [
     "app.services.file_report",
     "app.services.log_storage",
     "app.services.csv_storage",
+    "app.services.elastic_logs",
     "app.services.report",
+    "app.services.excel_pivot",
     "app.paths",
-] + stdlib_hiddenimports + duckdb_hidden + openpyxl_hidden
+    "app.config",
+] + stdlib_hiddenimports + duckdb_hidden + openpyxl_hidden + win32_hiddenimports
 
 a = Analysis(
     [str(backend_dir / "desktop" / "__main__.py")],
@@ -57,6 +68,7 @@ a = Analysis(
     binaries=duckdb_binaries + openpyxl_binaries,
     datas=[
         (str(backend_dir / "db" / "report_query.sql"), "db"),
+        (str(backend_dir / "app" / "data" / "android_model_aliases.json"), "app/data"),
     ]
     + duckdb_datas
     + openpyxl_datas,

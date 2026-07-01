@@ -1,58 +1,114 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from app.parsers.acs_log_parser import parse_log_files
+from app.parsers.acs_log_parser import (
+    ParseDiagnostics,
+    max_dropped_lines,
+    parse_log_files,
+)
 from app.services.csv_storage import delete_csv_day, save_daily_csvs
+from app.services.elastic_logs import ElasticDownloadCancelled, download_day
 from app.services.file_report import export_report_xlsx, run_report_query
-from app.services.log_storage import delete_log_day, make_file_id, read_log_files_by_ids, save_upload
-from desktop.coverage_utils import sort_log_paths_for_upload
+from app.services.log_storage import (
+    delete_log_day,
+    read_day_for_parse,
+    save_elastic_log,
+)
 
 
 @dataclass
-class UploadLogsResult:
+class ElasticDownloadResult:
     saved: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    cancelled: bool = False
 
 
 @dataclass
 class ParseLogsResult:
     saved: list[dict] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
 
-class UploadLogsWorker(QThread):
+class ElasticDownloadLogsWorker(QThread):
     progress = Signal(int, int, str)
+    day_progress = Signal(int, int, str, int)
+    day_saved = Signal(str, int)
     finished_ok = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, paths: list[str]) -> None:
+    def __init__(self, dates: list[str]) -> None:
         super().__init__()
-        self._paths = sort_log_paths_for_upload(paths)
+        self._dates = dates
+        self._cancel_requested = False
+
+    def request_cancel(self) -> None:
+        self._cancel_requested = True
 
     def run(self) -> None:
         saved: list[dict] = []
         errors: list[str] = []
-        total = len(self._paths)
-        for index, path in enumerate(self._paths, start=1):
-            name = Path(path).name
-            self.progress.emit(index, total, name)
+        warnings: list[str] = []
+        day_count = len(self._dates)
+        for index, day_date in enumerate(self._dates, start=1):
+            if self._cancel_requested:
+                break
             try:
-                content = Path(path).read_bytes()
-                saved.append(save_upload(name, content))
+                result = download_day(
+                    day_date,
+                    progress=lambda current, total, label, date=day_date, position=index: self.day_progress.emit(
+                        position,
+                        day_count,
+                        date,
+                        int(current / total * 100) if total else 0,
+                    ),
+                    should_cancel=lambda: self._cancel_requested,
+                )
+                record = save_elastic_log(
+                    day_date,
+                    result.content,
+                    partial=result.partial,
+                    row_count=result.row_count,
+                    min_datetime=result.min_datetime,
+                    max_datetime=result.max_datetime,
+                )
+                if result.dropped_count:
+                    warnings.append(
+                        f"{day_date}: skipped {result.dropped_count} row(s) "
+                        "with invalid timestamps."
+                    )
+                saved.append(record)
+                self.day_saved.emit(day_date, int(result.row_count or 0))
+            except ElasticDownloadCancelled:
+                break
             except Exception as error:
-                errors.append(f"{name}: {error}")
+                errors.append(f"{day_date}: {error}")
+        if self._cancel_requested:
+            self.finished_ok.emit(
+                ElasticDownloadResult(
+                    saved=saved,
+                    errors=errors,
+                    warnings=warnings,
+                    cancelled=True,
+                )
+            )
+            return
         if not saved and errors:
             self.failed.emit("\n".join(errors))
             return
-        self.finished_ok.emit(UploadLogsResult(saved=saved, errors=errors))
+        self.finished_ok.emit(
+            ElasticDownloadResult(saved=saved, errors=errors, warnings=warnings)
+        )
 
 
 class ParseLogsWorker(QThread):
     progress = Signal(int, int, str)
+    day_progress = Signal(int, int, str, int)
+    day_done = Signal(str)
     finished_ok = Signal(object)
     failed = Signal(str)
 
@@ -63,24 +119,38 @@ class ParseLogsWorker(QThread):
     def run(self) -> None:
         saved_days: list[dict] = []
         failed: dict[str, str] = {}
+        warnings: list[str] = []
         total = len(self._dates)
         if total == 0:
             self.finished_ok.emit(ParseLogsResult())
             return
 
+        threshold = max_dropped_lines()
         for index, day_date in enumerate(self._dates, start=1):
-            self.progress.emit(index, total, f"Parsing {day_date}…")
+            self.day_progress.emit(index, total, day_date, int(index / total * 100))
             try:
-                file_ids = [make_file_id(day_date, node) for node in ("acs1", "acs2")]
-                stored = read_log_files_by_ids(file_ids)
-                if len(stored) != 2:
-                    raise ValueError(f"Missing ACS1 or ACS2 log for {day_date}")
-                rows = parse_log_files(stored)
+                stored = read_day_for_parse(day_date)
+                diagnostics = ParseDiagnostics()
+                rows = parse_log_files(stored, diagnostics=diagnostics)
+                if diagnostics.dropped_count > threshold:
+                    failed[day_date] = (
+                        f"{diagnostics.dropped_count} malformed line(s) exceeded "
+                        f"the allowed threshold ({threshold}). Day not saved."
+                    )
+                    continue
                 saved_days.extend(save_daily_csvs(rows))
+                self.day_done.emit(day_date)
+                if diagnostics.dropped_count:
+                    warnings.append(
+                        f"{day_date}: skipped {diagnostics.dropped_count} "
+                        "malformed line(s) during parse."
+                    )
             except Exception as error:
                 failed[day_date] = str(error)
 
-        self.finished_ok.emit(ParseLogsResult(saved=saved_days, failed=failed))
+        self.finished_ok.emit(
+            ParseLogsResult(saved=saved_days, failed=failed, warnings=warnings)
+        )
 
 
 class DeleteDayWorker(QThread):

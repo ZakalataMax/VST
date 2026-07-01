@@ -51,7 +51,7 @@ TABLE_HEADERS = [
     ("", "Day status icon"),
     ("Date", "Log date"),
     ("Status", "Parse and coverage status"),
-    ("ACS", "ACS1 / ACS2 log files: ● present, ○ missing"),
+    ("Src", "Log source: EL = Elastic, ●● = ACS1/ACS2 files"),
     ("Rows", "Parsed message count"),
 ]
 
@@ -63,6 +63,8 @@ def _day_sort_key(day: dict, column: int):
         return day.get("date", "")
     if column == 3:
         log_day = day.get("log_day") or {}
+        if log_day.get("elastic"):
+            return 3
         return int(bool(log_day.get("acs1"))) + int(bool(log_day.get("acs2")))
     if column == 4:
         csv_day = day.get("csv_day")

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO, TextIO
 
@@ -27,6 +29,28 @@ from app.parsers.patterns import (
 
 SKIP_JSON_MESSAGE_TYPES: set[str] = set()
 
+DEFAULT_MAX_DROPPED_LINES = 100
+
+
+@dataclass
+class ParseDiagnostics:
+    dropped_count: int = 0
+    samples: list[str] = field(default_factory=list)
+
+    def record_drop(self, reason: str) -> None:
+        self.dropped_count += 1
+        if len(self.samples) < 10:
+            self.samples.append(reason)
+
+
+def max_dropped_lines() -> int:
+    raw = os.getenv("PARSER_MAX_DROPPED", "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_DROPPED_LINES
+    return value if value >= 0 else DEFAULT_MAX_DROPPED_LINES
+
 
 def _base_row(log_file: str, timestamp: str, source_index: int) -> MessageRow:
     return MessageRow(
@@ -41,7 +65,9 @@ def _parse_kv_pairs(text: str) -> dict[str, str]:
     return {key: value.strip() for key, value in KV_PAIR_RE.findall(text)}
 
 
-def _parse_json_array_payload(raw: str) -> list[dict]:
+def _parse_json_array_payload(
+    raw: str, diagnostics: ParseDiagnostics | None = None
+) -> list[dict]:
     stripped = raw.strip()
     if not stripped.startswith("{") and not stripped.startswith("["):
         return []
@@ -49,6 +75,8 @@ def _parse_json_array_payload(raw: str) -> list[dict]:
     try:
         data = json.loads(normalized)
     except json.JSONDecodeError:
+        if diagnostics is not None:
+            diagnostics.record_drop(f"Malformed JSON array payload: {stripped[:120]}")
         return []
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
@@ -57,8 +85,15 @@ def _parse_json_array_payload(raw: str) -> list[dict]:
     return []
 
 
-def _parse_json_object_payload(raw: str) -> dict | None:
-    data = json.loads(raw)
+def _parse_json_object_payload(
+    raw: str, diagnostics: ParseDiagnostics | None = None
+) -> dict | None:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        if diagnostics is not None:
+            diagnostics.record_drop(f"Malformed JSON object payload: {raw[:120]}")
+        return None
     return data if isinstance(data, dict) else None
 
 
@@ -68,9 +103,10 @@ def _rows_from_json_array(
     direction: str,
     raw_json: str,
     source_index: int,
+    diagnostics: ParseDiagnostics | None = None,
 ) -> list[MessageRow]:
     rows: list[MessageRow] = []
-    for payload in _parse_json_array_payload(raw_json):
+    for payload in _parse_json_array_payload(raw_json, diagnostics):
         message_type = payload.get("messageType")
         if message_type in SKIP_JSON_MESSAGE_TYPES:
             continue
@@ -93,8 +129,9 @@ def _row_from_oob_message(
     message_type: str,
     raw_json: str,
     source_index: int,
+    diagnostics: ParseDiagnostics | None = None,
 ) -> MessageRow | None:
-    payload = _parse_json_object_payload(raw_json)
+    payload = _parse_json_object_payload(raw_json, diagnostics)
     if not payload:
         return None
     row = _base_row(log_file, timestamp, source_index)
@@ -112,26 +149,13 @@ def _row_from_oob_message(
     return row
 
 
-def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]:
-    timestamp_match = TIMESTAMP_RE.match(line)
-    if not timestamp_match:
-        return []
-    timestamp = timestamp_match.group(1)
-
-    creq_match = CREQ_STARTED_RE.search(line)
-    if creq_match:
-        return []
-
-    challenge_method_match = CHALLENGE_METHOD_RE.search(line)
-    if challenge_method_match:
-        row = _base_row(log_file, timestamp, source_index)
-        row.message_type = "ChallengeMethod"
-        row.three_ds_server_trans_id = challenge_method_match.group(1)
-        row.acs_trans_id = challenge_method_match.group(2)
-        row.challenge_method = challenge_method_match.group(3)
-        row.challenge_method_code = challenge_method_match.group(4)
-        return [row]
-
+def _parse_incoming_line(
+    log_file: str,
+    line: str,
+    timestamp: str,
+    source_index: int,
+    diagnostics: ParseDiagnostics | None = None,
+) -> list[MessageRow]:
     challenge_answer_match = CHALLENGE_ANSWER_RE.search(line)
     if challenge_answer_match:
         pairs = _parse_kv_pairs(challenge_answer_match.group(1))
@@ -142,6 +166,107 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
         row.message_direction = "In"
         row.acs_trans_id = pairs.get("acs_txn_id", "").strip()
         row.challenge_submit = pairs.get("submit", "")
+        return [row]
+
+    for regex, message_type in (
+        (OOB_INIT_IN_RE, "OobInitResponse"),
+        (OOB_RESULT_IN_RE, "OobResultRequest"),
+    ):
+        match = regex.search(line)
+        if match:
+            row = _row_from_oob_message(
+                log_file,
+                timestamp,
+                "In",
+                message_type,
+                match.group(2),
+                source_index,
+                diagnostics,
+            )
+            return [row] if row else []
+
+    incoming_payload_match = INCOMING_MESSAGE_PAYLOAD_RE.search(line)
+    if incoming_payload_match:
+        payload_text = incoming_payload_match.group(1)
+        if not payload_text.startswith(("OobInit", "OobResult", "ChallengeAnswerRequest")):
+            return _rows_from_json_array(
+                log_file,
+                timestamp,
+                "In",
+                payload_text,
+                source_index,
+                diagnostics,
+            )
+    return []
+
+
+def _parse_outgoing_line(
+    log_file: str,
+    line: str,
+    timestamp: str,
+    source_index: int,
+    diagnostics: ParseDiagnostics | None = None,
+) -> list[MessageRow]:
+    for regex, message_type in (
+        (OOB_INIT_OUT_RE, "OobInitRequest"),
+        (OOB_RESULT_OUT_RE, "OobResultResponse"),
+    ):
+        match = regex.search(line)
+        if match:
+            row = _row_from_oob_message(
+                log_file,
+                timestamp,
+                "Out",
+                message_type,
+                match.group(2),
+                source_index,
+                diagnostics,
+            )
+            return [row] if row else []
+
+    outgoing_payload_match = OUTGOING_MESSAGE_PAYLOAD_RE.search(line)
+    if outgoing_payload_match:
+        payload_text = outgoing_payload_match.group(1)
+        if not payload_text.startswith(("OobInit", "OobResult")):
+            return _rows_from_json_array(
+                log_file,
+                timestamp,
+                "Out",
+                payload_text,
+                source_index,
+                diagnostics,
+            )
+    return []
+
+
+def _parse_line(
+    log_file: str,
+    line: str,
+    source_index: int,
+    diagnostics: ParseDiagnostics | None = None,
+) -> list[MessageRow]:
+    timestamp_match = TIMESTAMP_RE.match(line)
+    if not timestamp_match:
+        return []
+    timestamp = timestamp_match.group(1)
+
+    creq_match = CREQ_STARTED_RE.search(line)
+    if creq_match:
+        return []
+
+    if "Incoming message:" in line:
+        return _parse_incoming_line(log_file, line, timestamp, source_index, diagnostics)
+    if "Outgoing message:" in line:
+        return _parse_outgoing_line(log_file, line, timestamp, source_index, diagnostics)
+
+    challenge_method_match = CHALLENGE_METHOD_RE.search(line)
+    if challenge_method_match:
+        row = _base_row(log_file, timestamp, source_index)
+        row.message_type = "ChallengeMethod"
+        row.three_ds_server_trans_id = challenge_method_match.group(1)
+        row.acs_trans_id = challenge_method_match.group(2)
+        row.challenge_method = challenge_method_match.group(3)
+        row.challenge_method_code = challenge_method_match.group(4)
         return [row]
 
     challenge_succeeded_match = CHALLENGE_SUCCEEDED_RE.search(line)
@@ -182,70 +307,37 @@ def _parse_line(log_file: str, line: str, source_index: int) -> list[MessageRow]
         row.auth_method_switch = f"{auth_switch_match.group(3)}->{auth_switch_match.group(4)}"
         return [row]
 
-    for regex, direction, message_type in (
-        (OOB_INIT_OUT_RE, "Out", "OobInitRequest"),
-        (OOB_INIT_IN_RE, "In", "OobInitResponse"),
-        (OOB_RESULT_IN_RE, "In", "OobResultRequest"),
-        (OOB_RESULT_OUT_RE, "Out", "OobResultResponse"),
-    ):
-        match = regex.search(line)
-        if match:
-            row = _row_from_oob_message(
-                log_file,
-                timestamp,
-                direction,
-                message_type,
-                match.group(2),
-                source_index,
-            )
-            return [row] if row else []
-
-    incoming_payload_match = INCOMING_MESSAGE_PAYLOAD_RE.search(line)
-    if incoming_payload_match:
-        payload_text = incoming_payload_match.group(1)
-        if not payload_text.startswith(("OobInit", "OobResult", "ChallengeAnswerRequest")):
-            return _rows_from_json_array(
-                log_file,
-                timestamp,
-                "In",
-                payload_text,
-                source_index,
-            )
-
-    outgoing_payload_match = OUTGOING_MESSAGE_PAYLOAD_RE.search(line)
-    if outgoing_payload_match:
-        payload_text = outgoing_payload_match.group(1)
-        if not payload_text.startswith(("OobInit", "OobResult")):
-            return _rows_from_json_array(
-                log_file,
-                timestamp,
-                "Out",
-                payload_text,
-                source_index,
-            )
-
     return []
 
 
-def parse_log_content(log_file: str, content: str, file_index: int = 0) -> list[MessageRow]:
+def parse_log_content(
+    log_file: str,
+    content: str,
+    file_index: int = 0,
+    diagnostics: ParseDiagnostics | None = None,
+) -> list[MessageRow]:
     rows: list[MessageRow] = []
     for line_no, line in enumerate(content.splitlines()):
         source_index = file_index * 10_000_000 + line_no
-        rows.extend(_parse_line(log_file, line, source_index))
+        rows.extend(_parse_line(log_file, line, source_index, diagnostics))
     return rows
 
 
 def parse_log_file(path: str | Path, log_file: str | None = None) -> list[MessageRow]:
     file_path = Path(path)
     display_name = log_file or file_path.name
-    content = file_path.read_text(encoding="utf-8", errors="ignore")
+    content = file_path.read_text(encoding="utf-8", errors="replace")
     return parse_log_content(display_name, content)
 
 
-def parse_log_files(files: list[tuple[str, str]], sort_output: bool = True) -> list[MessageRow]:
+def parse_log_files(
+    files: list[tuple[str, str]],
+    sort_output: bool = True,
+    diagnostics: ParseDiagnostics | None = None,
+) -> list[MessageRow]:
     all_rows: list[MessageRow] = []
     for file_index, (log_file, content) in enumerate(files):
-        all_rows.extend(parse_log_content(log_file, content, file_index))
+        all_rows.extend(parse_log_content(log_file, content, file_index, diagnostics))
     if sort_output:
         all_rows.sort(
             key=lambda row: (
@@ -335,9 +427,9 @@ def read_uploaded_files(uploads: list[tuple[str, bytes | BinaryIO | TextIO]]) ->
     parsed_files: list[tuple[str, str]] = []
     for filename, handle in uploads:
         if isinstance(handle, bytes):
-            content = handle.decode("utf-8", errors="ignore")
+            content = handle.decode("utf-8", errors="replace")
         else:
             raw = handle.read()
-            content = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else raw
+            content = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
         parsed_files.append((filename, content))
     return parsed_files

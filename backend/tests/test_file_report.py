@@ -1,0 +1,308 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from app.parsers.models import MessageRow
+from app.services import file_report
+from app.services.csv_storage import resolve_csv_paths_for_dates, save_daily_csvs, CSV_TO_DB
+
+
+def _areq(txn: str, when: str, *, acct: str = "4111111111111111") -> MessageRow:
+    return MessageRow(
+        log_file="elastic.log",
+        message_datetime=when,
+        message_type="AReq",
+        three_ds_server_trans_id=txn,
+        acct_number=acct,
+        merchant_name="Test Merchant",
+        browser_user_agent="Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36",
+    )
+
+
+def _ares(txn: str, when: str, *, status: str = "C", reason: str = "") -> MessageRow:
+    return MessageRow(
+        log_file="elastic.log",
+        message_datetime=when,
+        message_type="ARes",
+        three_ds_server_trans_id=txn,
+        trans_status=status,
+        trans_status_reason=reason,
+    )
+
+
+def _cres(txn: str, when: str, *, status: str = "Y") -> MessageRow:
+    return MessageRow(
+        log_file="elastic.log",
+        message_datetime=when,
+        message_type="CRes",
+        three_ds_server_trans_id=txn,
+        trans_status=status,
+    )
+
+
+class FileReportTest(unittest.TestCase):
+    def test_pivot_row_fields_include_browser_before_txn_id(self) -> None:
+        fields = file_report.PIVOT_ROW_FIELDS
+        self.assertEqual(fields.index("r02"), 0)
+        self.assertEqual(fields[fields.index("threedsservertransid") - 2 : fields.index("threedsservertransid")], [
+            "browser_os",
+            "browser_model",
+        ])
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._saved = {
+            key: os.environ.get(key)
+            for key in ("CSV_STORAGE_DIR", "REPORT_OUTPUT_DIR")
+        }
+        os.environ["CSV_STORAGE_DIR"] = str(Path(self._tmp.name) / "csv")
+        os.environ["REPORT_OUTPUT_DIR"] = str(Path(self._tmp.name) / "reports")
+
+    def tearDown(self) -> None:
+        for key, value in self._saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+
+    def _seed_day(self, day: str, txn: str = "T1") -> None:
+        save_daily_csvs(
+            [
+                _areq(txn, f"{day} 10:00:00.000"),
+                _ares(txn, f"{day} 10:00:01.000"),
+                _cres(txn, f"{day} 10:05:00.000"),
+            ]
+        )
+
+    def test_default_report_single_day(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.row_count, 1)
+        self.assertIn("threedsservertransid", result.columns)
+        row = result.rows[0]
+        self.assertEqual(row["threedsservertransid"], "T1")
+        self.assertIn("AReq", row["txn_timeline"])
+        self.assertIn("ARes(C+NULL)", row["txn_timeline"])
+        self.assertIn("CRes(Y)", row["txn_timeline"])
+        self.assertEqual(row["browser_os"], "Android")
+        self.assertEqual(row["browser_model"], "Samsung SM-S921B")
+        self.assertEqual(row["card_scheme"], "Visa")
+
+    def test_report_fills_browser_fields_from_user_agent_without_stored_columns(self) -> None:
+        from app.parsers.csv_writer import csv_dict_writer
+
+        csv_dir = Path(os.environ["CSV_STORAGE_DIR"])
+        csv_dir.mkdir(parents=True, exist_ok=True)
+        legacy_columns = [
+            column
+            for column in CSV_TO_DB.keys()
+            if column not in {"browserOS", "browserModel"}
+        ]
+        row = {
+            "messageDateTime": "2026-06-20 10:00:00.000",
+            "messageType": "AReq",
+            "threeDSServerTransID": "T1",
+            "acctNumber": "4111111111111111",
+            "merchantName": "Test Merchant",
+            "browserUserAgent": (
+                "Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36"
+            ),
+        }
+        csv_path = csv_dir / "2026-06-20.csv"
+        with csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv_dict_writer(handle, fieldnames=legacy_columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerow(row)
+        file_report.clear_report_cache()
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.row_count, 1)
+        self.assertEqual(result.rows[0]["browser_os"], "Android")
+        self.assertEqual(result.rows[0]["browser_model"], "Samsung SM-S921B")
+
+    def test_ares_timeline_includes_status_reason(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000", status="R", reason="02"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertIn("ARes(R+02)", result.rows[0]["txn_timeline"])
+        self.assertEqual(result.rows[0]["r02"], "YES")
+
+    def test_r02_is_no_without_ares_r02(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.rows[0]["r02"], "NO")
+
+    def test_multi_day_report_counts_all(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        self._seed_day("2026-06-21", "T2")
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-21 23:59:59",
+        )
+        self.assertEqual(result.row_count, 2)
+        txns = {row["threedsservertransid"] for row in result.rows}
+        self.assertEqual(txns, {"T1", "T2"})
+
+    def test_missing_csv_day_in_range_blocks(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        self._seed_day("2026-06-22", "T2")
+        with self.assertRaises(ValueError) as ctx:
+            file_report.run_report_query(
+                mode="date",
+                date_from="2026-06-20 00:00:00",
+                date_to="2026-06-22 23:59:59",
+            )
+        self.assertIn("2026-06-21", str(ctx.exception))
+
+    def test_partial_day_csv_is_accepted(self) -> None:
+        # A partial day still produces a CSV file (only morning data).
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 07:00:00.000"),
+                _ares("T1", "2026-06-20 07:00:01.000"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.row_count, 1)
+
+    def test_txn_mode_returns_only_requested(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000"),
+                _areq("T2", "2026-06-20 11:00:00.000"),
+                _ares("T2", "2026-06-20 11:00:01.000"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="txnId",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+            txn_id="T2",
+        )
+        self.assertEqual(result.row_count, 1)
+        self.assertEqual(result.rows[0]["threedsservertransid"], "T2")
+
+    def test_export_writes_unique_filenames(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        first = file_report.export_report_xlsx(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+            native_pivot=False,
+        )
+        second = file_report.export_report_xlsx(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+            native_pivot=False,
+        )
+        self.assertTrue(Path(first.output_path).exists())
+        self.assertTrue(Path(second.output_path).exists())
+        self.assertNotEqual(first.file_name, second.file_name)
+        self.assertEqual(first.row_count, 1)
+
+    def test_export_has_data_and_summary_sheets(self) -> None:
+        from openpyxl import load_workbook
+
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000"),
+                _cres("T1", "2026-06-20 10:05:00.000", status="Y"),
+                _areq("T2", "2026-06-20 11:00:00.000"),
+                _ares("T2", "2026-06-20 11:00:01.000"),
+            ]
+        )
+        export = file_report.export_report_xlsx(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+            native_pivot=False,
+        )
+        workbook = load_workbook(export.output_path)
+        self.assertIn("Data", workbook.sheetnames)
+        self.assertIn("Summary", workbook.sheetnames)
+        summary = workbook["Summary"]
+        header = [cell.value for cell in summary[1]]
+        self.assertEqual(header, ["txn_result", "count", "percent"])
+        total = sum(row[1].value for row in summary.iter_rows(min_row=2))
+        self.assertEqual(total, export.row_count)
+
+    def test_pagination_is_consistent_across_pages(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _areq("T2", "2026-06-20 10:01:00.000"),
+                _areq("T3", "2026-06-20 10:02:00.000"),
+            ]
+        )
+        kwargs = dict(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        page1 = file_report.run_report_query(limit=2, offset=0, **kwargs)
+        page2 = file_report.run_report_query(limit=2, offset=2, **kwargs)
+        self.assertEqual(page1.row_count, 3)
+        self.assertEqual(page2.row_count, 3)
+        self.assertEqual(len(page1.rows), 2)
+        self.assertEqual(len(page2.rows), 1)
+        seen = {row["threedsservertransid"] for row in page1.rows + page2.rows}
+        self.assertEqual(seen, {"T1", "T2", "T3"})
+
+    def test_cache_invalidates_when_data_changes(self) -> None:
+        kwargs = dict(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self._seed_day("2026-06-20", "T1")
+        first = file_report.run_report_query(**kwargs)
+        self.assertEqual(first.row_count, 1)
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _areq("T9", "2026-06-20 12:00:00.000"),
+            ]
+        )
+        second = file_report.run_report_query(**kwargs)
+        self.assertEqual(second.row_count, 2)
+
+    def test_resolve_missing_day_lists_all_missing(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        with self.assertRaises(ValueError) as ctx:
+            resolve_csv_paths_for_dates(["2026-06-20", "2026-06-21", "2026-06-22"])
+        message = str(ctx.exception)
+        self.assertIn("2026-06-21", message)
+        self.assertIn("2026-06-22", message)
+
+
+if __name__ == "__main__":
+    unittest.main()

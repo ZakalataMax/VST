@@ -1,16 +1,28 @@
 WITH
-areq AS (
+report_areq AS (
     SELECT
         ds.messagedatetime,
         ds.threedsservertransid,
         ds.acctnumber,
         ds.merchantname,
         ds.browseruseragent,
+        ds.browseros,
+        ds.browsermodel,
         ds.threedsrequestorurl,
         ds.threedsserverurl,
         ds.threedsrequestorname
     FROM cust_acs_3dsmess ds
     WHERE ds.messagetype = 'AReq'
+      AND (%(txn_id)s::text IS NULL OR ds.threedsservertransid = %(txn_id)s::text)
+      AND ds.messagedatetime >= %(date_from)s::text
+      AND (%(date_to)s::text IS NULL OR ds.messagedatetime <= %(date_to)s::text)
+),
+report_txn AS (
+    SELECT DISTINCT threedsservertransid
+    FROM report_areq
+),
+areq AS (
+    SELECT * FROM report_areq
 ),
 ares AS (
     SELECT
@@ -18,6 +30,7 @@ ares AS (
         (array_agg(ds.transstatus ORDER BY ds.messagedatetime DESC))[1] AS transstatus,
         (array_agg(ds.transstatusreason ORDER BY ds.messagedatetime DESC))[1] AS transstatusreason
     FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
     WHERE ds.messagetype = 'ARes'
     GROUP BY ds.threedsservertransid
 ),
@@ -27,6 +40,7 @@ cres AS (
         (array_agg(ds.transstatus ORDER BY ds.messagedatetime DESC))[1] AS transstatus,
         (array_agg(ds.transstatusreason ORDER BY ds.messagedatetime DESC))[1] AS transstatusreason
     FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
     WHERE ds.messagetype = 'CRes'
     GROUP BY ds.threedsservertransid
 ),
@@ -35,6 +49,7 @@ erro AS (
         ds.threedsservertransid,
         (array_agg(ds.errorcode ORDER BY ds.messagedatetime DESC))[1] AS errorcode
     FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
     WHERE ds.messagetype = 'Erro'
     GROUP BY ds.threedsservertransid
 ),
@@ -64,7 +79,8 @@ event_token AS (
         END AS tie_sort,
         CASE
             WHEN e.messagetype = 'AReq' THEN 'AReq'
-            WHEN e.messagetype = 'ARes' THEN 'ARes(' || e.transstatus || ')'
+            WHEN e.messagetype = 'ARes'
+            THEN 'ARes(' || COALESCE(e.transstatus, 'NULL') || '+' || COALESCE(e.transstatusreason, 'NULL') || ')'
             WHEN e.messagetype = 'CReq' THEN 'CReq'
             WHEN e.messagetype = 'OobInitRequest' THEN 'OobInitReq'
             WHEN e.messagetype = 'OobInitResponse' THEN 'OobInitResp'
@@ -111,6 +127,7 @@ event_token AS (
             THEN 'OOB to OTP: ' || REPLACE(e.authmethodswitch, '->', ' -> ')
         END AS token
     FROM cust_acs_3dsmess e
+    INNER JOIN report_txn t ON e.threedsservertransid = t.threedsservertransid
     WHERE e.threedsservertransid IS NOT NULL
 ),
 timeline AS (
@@ -126,6 +143,7 @@ acs_id AS (
         ds.threedsservertransid,
         max(ds.acstransid) AS acs_trans_id
     FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
     WHERE coalesce(ds.acstransid, '') != ''
     GROUP BY ds.threedsservertransid
 ),
@@ -135,6 +153,7 @@ oob_init AS (
         count(*) FILTER (WHERE ds.messagetype = 'OobInitRequest') AS oob_init_req_count,
         count(*) FILTER (WHERE ds.messagetype = 'OobInitResponse') AS oob_init_resp_count
     FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
     WHERE ds.messagetype IN ('OobInitRequest', 'OobInitResponse')
       AND ds.threedsservertransid IS NOT NULL
     GROUP BY ds.threedsservertransid
@@ -148,14 +167,28 @@ oob_missing_day AS (
     FROM areq a
     LEFT JOIN oob_init o ON a.threedsservertransid = o.threedsservertransid
     GROUP BY substr(a.messagedatetime, 1, 10)
+),
+ares_r02 AS (
+    SELECT DISTINCT ds.threedsservertransid
+    FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
+    WHERE ds.messagetype = 'ARes'
+      AND COALESCE(ds.transstatus, '') = 'R'
+      AND COALESCE(ds.transstatusreason, '') = '02'
 )
 SELECT
+    CASE
+        WHEN ares_r02.threedsservertransid IS NOT NULL THEN 'YES'
+        ELSE 'NO'
+    END AS r02,
     substr(areq.messagedatetime, 9, 2) || '.' || substr(areq.messagedatetime, 6, 2) || '.' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
     COALESCE(oob_missing_day.oob_missing_day, 0) AS oob_missing_day,
     'CRES: ' || COALESCE(cres.transstatus, 'NULL')
         || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
     timeline.txn_timeline,
     areq.browseruseragent AS browser_user_agent,
+    COALESCE(areq.browseros, '') AS browser_os,
+    COALESCE(areq.browsermodel, '') AS browser_model,
     areq.merchantname AS merchant_name,
     'URL: ' || COALESCE(areq.threedsrequestorurl, 'NULL')
         || ' | Server: ' || COALESCE(areq.threedsserverurl, 'NULL')
@@ -194,7 +227,5 @@ LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
 LEFT JOIN acs_id ON areq.threedsservertransid = acs_id.threedsservertransid
 LEFT JOIN oob_init ON areq.threedsservertransid = oob_init.threedsservertransid
 LEFT JOIN oob_missing_day ON substr(areq.messagedatetime, 1, 10) = oob_missing_day.day
-WHERE (%(txn_id)s::text IS NULL OR areq.threedsservertransid = %(txn_id)s::text)
-  AND areq.messagedatetime >= %(date_from)s::text
-  AND (%(date_to)s::text IS NULL OR areq.messagedatetime <= %(date_to)s::text)
-ORDER BY 1
+LEFT JOIN ares_r02 ON areq.threedsservertransid = ares_r02.threedsservertransid
+ORDER BY areq.messagedatetime

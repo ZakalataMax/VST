@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.parsers.csv_writer import rows_to_csv
+from app.parsers.csv_writer import write_rows_csv
 from app.parsers.models import CSV_COLUMNS, MessageRow
 from app.paths import get_csv_storage_dir
 
@@ -37,6 +37,8 @@ CSV_TO_DB: dict[str, str] = {
     "acquirerBIN": "acquirerbin",
     "browserIP": "browserip",
     "browserUserAgent": "browseruseragent",
+    "browserOS": "browseros",
+    "browserModel": "browsermodel",
     "errorCode": "errorcode",
     "isChallengeExpired": "ischallengeexpired",
     "oobResultStatus": "oobresultstatus",
@@ -145,7 +147,7 @@ def save_daily_csvs(rows: list[MessageRow]) -> list[dict]:
     for day in sorted(by_day):
         day_rows = by_day[day]
         csv_path = csv_dir / f"{day}.csv"
-        csv_path.write_text(rows_to_csv(day_rows), encoding="utf-8")
+        write_rows_csv(csv_path, day_rows)
         row_count, min_datetime, max_datetime = _summarize_rows(day_rows)
         _write_meta(csv_dir, day, row_count, min_datetime, max_datetime)
         saved_days.append(
@@ -188,9 +190,12 @@ def resolve_csv_paths_for_dates(dates: list[str]) -> list[Path]:
         else:
             missing.append(day)
 
+    if missing:
+        raise ValueError(
+            "Report range has unparsed day(s) with no CSV: "
+            f"{', '.join(missing)}. Download and parse these day(s) first."
+        )
     if not paths:
-        if missing:
-            raise ValueError(f"No CSV for date(s): {', '.join(missing)}")
         raise ValueError("No parsed CSV files found.")
 
     return paths

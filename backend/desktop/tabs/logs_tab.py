@@ -1,13 +1,10 @@
 from __future__ import annotations
 
+import os
 from datetime import date, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
     QHBoxLayout,
     QMessageBox,
     QTabWidget,
@@ -16,13 +13,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.paths import get_report_output_dir
+from app.services.elastic_logs import iter_days, plan_download_dates
 from app.services.report import validate_report_range
 from app.services.csv_storage import list_csv_days
 from app.services.csv_storage import delete_csv_day
-from app.services.log_storage import list_log_days, list_log_files, scan_log_datetime_range
+from app.services.log_storage import (
+    elastic_download_complete,
+    has_elastic_log,
+    list_log_days,
+    list_log_files,
+)
 from desktop.coverage_utils import (
-    STATUS_READY,
     build_coverage_days,
+    day_has_logs,
 )
 from desktop.report_sql_utils import apply_literal_dates_to_sql
 from desktop.widgets.coverage_sidebar import CoverageSidebar
@@ -30,17 +33,13 @@ from desktop.widgets.import_parse_panel import ImportParsePanel
 from desktop.widgets.report_panel import ReportPanel
 from desktop.workers import (
     DeleteDayWorker,
+    ElasticDownloadLogsWorker,
     ParseLogsWorker,
     ReportExportWorker,
     ReportRunWorker,
-    UploadLogsWorker,
 )
 
 CHUNK_SIZE = 100
-
-
-def _missing_acs_nodes(log_day: dict) -> list[str]:
-    return [node.upper() for node in ("acs1", "acs2") if not log_day.get(node)]
 
 
 class LogsTab(QWidget):
@@ -58,6 +57,7 @@ class LogsTab(QWidget):
         self._parsing_dates: set[str] = set()
         self._failed_dates: dict[str, str] = {}
         self._import_skip_messages: list[str] = []
+        self._skipped_download_dates: list[str] = []
         self._last_upload_date = ""
         self._last_worker_error = ""
 
@@ -90,8 +90,9 @@ class LogsTab(QWidget):
         layout.setSpacing(0)
 
         self.import_panel = ImportParsePanel()
-        self.import_panel.load_requested.connect(self._upload_logs)
-        self.import_panel.files_dropped.connect(self._upload_paths)
+        self.import_panel.download_requested.connect(self._download_from_elastic)
+        self.import_panel.cancel_download_requested.connect(self._cancel_download)
+        self.import_panel.parse_requested.connect(self._reparse_day_requested)
         self.import_panel.delete_requested.connect(self._delete_day)
         layout.addWidget(self.import_panel)
         return tab
@@ -178,17 +179,6 @@ class LogsTab(QWidget):
             return
         self._select_days(dates)
 
-    def _open_report_for_date(self, date: str) -> None:
-        self._select_day(date)
-        self.tabs.setCurrentIndex(1)
-
-    def _parse_ready(self) -> None:
-        dates = [day["date"] for day in self._coverage_days if day.get("status") == STATUS_READY]
-        self._parse_dates(dates)
-
-    def _parse_day(self, date: str) -> None:
-        self._parse_dates([date])
-
     def _split_parseable_dates(self, dates: list[str]) -> tuple[list[str], list[str]]:
         day_by_date = {day["date"]: day for day in self._coverage_days}
         parseable: list[str] = []
@@ -198,10 +188,9 @@ class LogsTab(QWidget):
             if not day:
                 continue
             log_day = day.get("log_day") or {}
-            missing = _missing_acs_nodes(log_day)
-            if missing:
+            if not day_has_logs(log_day):
                 skip_messages.append(
-                    f"{date}: missing {', '.join(missing)} log — parsing skipped"
+                    f"{date}: no logs downloaded — parsing skipped"
                 )
                 continue
             parseable.append(date)
@@ -224,19 +213,29 @@ class LogsTab(QWidget):
             ParseLogsWorker(parseable),
             indeterminate=False,
             for_parse=True,
+            progress_phase="parse",
             on_start=lambda: self._mark_parsing_dates(parseable),
-            on_progress=lambda current, total, text: self._set_progress(current, total, text, parse=True),
+            on_day_progress=lambda index, total, day, percent: self.import_panel.update_progress(
+                f"Parsing {day} ({index}/{total})", percent, phase="parse"
+            ),
+            on_day_done=lambda day: self.import_panel.add_progress_item(f"{day} — parsed"),
             on_ok=self._on_parse_batch_success,
+            status="Parsing logs",
         )
 
     def _on_parse_batch_success(self, result) -> None:
         saved: list[dict] = []
         failed: dict[str, str] = {}
+        warnings: list[str] = []
         if result is not None:
             saved = list(getattr(result, "saved", []) or [])
             failed = dict(getattr(result, "failed", {}) or {})
+            warnings = list(getattr(result, "warnings", []) or [])
         for date, reason in failed.items():
             self._failed_dates[date] = reason
+        for message in warnings:
+            if message not in self._import_skip_messages:
+                self._import_skip_messages.append(message)
         for item in saved:
             date = item.get("date")
             if date:
@@ -271,117 +270,129 @@ class LogsTab(QWidget):
         if index == 1 and not self.report_panel.date_from.text().strip():
             self._sync_report_dates(self._selected_dates)
 
-    def _upload_logs(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Select ACS log files",
-            "",
-            "Log files (*.log);;All files (*.*)",
-        )
-        if not paths:
+    def _download_from_elastic(self, date_from: str, date_to: str) -> None:
+        if not date_from or not date_to:
             return
-        self._upload_paths(paths)
-
-    def _upload_paths(self, paths: list[str]) -> None:
-        if not paths:
+        if not os.getenv("ELASTIC_PASS"):
+            QMessageBox.warning(
+                self,
+                "Elastic password required",
+                "ELASTIC_PASS is not set.\n\n"
+                "Add it to a .env file (copy .env.example to .env next to the app "
+                "and fill in ELASTIC_PASS), or set the ELASTIC_PASS environment "
+                "variable, then restart the app and try again.",
+            )
+            return
+        today = date.today().isoformat()
+        complete_days = {
+            day
+            for day in iter_days(date_from, date_to)
+            if elastic_download_complete(day)
+        }
+        to_download, skipped, _future = plan_download_dates(
+            date_from,
+            date_to,
+            today=today,
+            downloaded=complete_days,
+        )
+        self._skipped_download_dates = skipped
+        if not to_download:
+            if skipped:
+                self._select_day(skipped[-1])
+                self._set_import_message(
+                    f"Already downloaded (full days) — skipped {len(skipped)} day(s): "
+                    f"{self._format_dates(skipped)}.",
+                    error=False,
+                )
+            else:
+                self._set_import_message(
+                    "Nothing to download for the selected range.",
+                    error=False,
+                )
             return
         self._import_skip_messages = []
         self.import_panel.clear_message()
         self._start_worker(
-            UploadLogsWorker(paths),
+            ElasticDownloadLogsWorker(to_download),
             indeterminate=False,
             for_parse=True,
-            on_progress=lambda current, total, name: self._set_progress(
-                current, total, f"Uploading {name}", parse=True
+            progress_phase="download",
+            on_day_progress=lambda index, count, day, percent: self.import_panel.update_progress(
+                f"Downloading {day} ({index}/{count}) — {percent}%", percent, phase="download"
             ),
-            on_ok=self._after_upload,
+            on_day_saved=self._on_day_downloaded,
+            on_ok=self._after_elastic_download,
+            status="Downloading from Elastic",
         )
 
-    def _after_upload(self, result) -> None:
-        saved = list(getattr(result, "saved", []) or [])
-        upload_errors = list(getattr(result, "errors", []) or [])
+    def _on_day_downloaded(self, day_date: str, rows: int) -> None:
+        self.import_panel.add_progress_item(f"{day_date} — {rows:,} rows downloaded")
         self.refresh_data()
-        uploaded_dates = {record["logDate"] for record in saved}
-        if uploaded_dates:
-            self._last_upload_date = max(uploaded_dates)
-        for upload_date in uploaded_dates:
-            self._failed_dates.pop(upload_date, None)
-        ready_dates, reparse_days, skip_messages = self._upload_parse_plan(uploaded_dates)
-        self._import_skip_messages = skip_messages + upload_errors
-        if self._import_skip_messages:
+
+    def _after_elastic_download(self, result) -> None:
+        saved = list(getattr(result, "saved", []) or [])
+        errors = list(getattr(result, "errors", []) or [])
+        warnings = list(getattr(result, "warnings", []) or [])
+        errors = errors + warnings
+        self.refresh_data()
+        downloaded_dates = {record["logDate"] for record in saved}
+        if downloaded_dates:
+            self._last_upload_date = max(downloaded_dates)
+        for download_date in downloaded_dates:
+            self._failed_dates.pop(download_date, None)
+        self._import_skip_messages = errors
+        if errors:
             self._sync_import_message()
-        parse_dates = list(ready_dates)
-        if reparse_days and self._confirm_reparse(reparse_days):
-            for item in reparse_days:
-                delete_csv_day(item["date"])
-                parse_dates.append(item["date"])
-        elif reparse_days:
-            self._set_import_message(
-                "Upload complete. Re-parse cancelled — existing parsed data kept.",
-                error=False,
-            )
-        if parse_dates:
-            self._parse_dates(parse_dates)
-        elif not self._import_skip_messages and not reparse_days:
-            self._set_import_message("Upload complete.", error=False)
         if self._last_upload_date:
             self._select_day(self._last_upload_date)
-
-    def _upload_parse_plan(
-        self, uploaded_dates: set[str]
-    ) -> tuple[list[str], list[dict], list[str]]:
-        day_by_date = {day["date"]: day for day in self._coverage_days}
-        ready_dates: list[str] = []
-        reparse_days: list[dict] = []
-        skip_messages: list[str] = []
-        for date in sorted(uploaded_dates):
-            day = day_by_date.get(date)
-            if not day:
-                continue
-            log_day = day.get("log_day") or {}
-            missing = _missing_acs_nodes(log_day)
-            if missing:
-                skip_messages.append(
-                    f"{date}: missing {', '.join(missing)} log — parsing skipped"
+        skipped = getattr(self, "_skipped_download_dates", [])
+        skip_note = (
+            f" Skipped {len(skipped)} fully downloaded day(s)."
+            if skipped
+            else ""
+        )
+        if downloaded_dates:
+            if getattr(result, "cancelled", False):
+                self._set_import_message(
+                    f"Download stopped. Saved {len(downloaded_dates)} day(s) before cancel.{skip_note}",
+                    error=False,
                 )
-                continue
-            csv_day = day.get("csv_day")
-            if not csv_day:
-                ready_dates.append(date)
-                continue
-            log_min, log_max = scan_log_datetime_range(date)
-            if not log_max:
-                skip_messages.append(f"{date}: uploaded logs have no timestamps — parsing skipped")
-                continue
-            csv_min = str(csv_day.get("minDateTime") or "")
-            csv_max = str(csv_day.get("maxDateTime") or "")
-            if log_max <= csv_max and (not csv_min or log_min >= csv_min):
-                continue
-            reparse_days.append(
-                {
-                    "date": date,
-                    "csv_min": csv_min,
-                    "csv_max": csv_max,
-                    "log_min": log_min,
-                    "log_max": log_max,
-                }
-            )
-        return ready_dates, reparse_days, skip_messages
+            self._parse_after_download(sorted(downloaded_dates), skip_note=skip_note)
+        elif getattr(result, "cancelled", False):
+            self._set_import_message("Download stopped.", error=False)
+        elif not errors:
+            self._set_import_message(f"Download complete.{skip_note}", error=False)
 
-    def _confirm_reparse(self, reparse_days: list[dict]) -> bool:
-        lines: list[str] = []
-        for item in reparse_days:
-            parsed_range = self._format_datetime_range(item["csv_min"], item["csv_max"])
-            log_range = self._format_datetime_range(item["log_min"], item["log_max"])
-            lines.append(
-                f"{item['date']}\n"
-                f"  Parsed: {parsed_range}\n"
-                f"  New logs: {log_range}"
-            )
+    def _parse_after_download(self, dates: list[str], *, skip_note: str = "") -> None:
+        csv_dates = {day["date"] for day in self._coverage_days if day.get("csv_day")}
+        parse_dates: list[str] = []
+        for download_date in dates:
+            if download_date in csv_dates:
+                delete_csv_day(download_date)
+            parse_dates.append(download_date)
+        if parse_dates:
+            self._parse_dates(parse_dates)
+
+    def _reparse_day_requested(self, log_date: str) -> None:
+        if not log_date:
+            return
+        self._import_skip_messages = []
+        self.import_panel.clear_message()
+        day = self._day_by_date(log_date)
+        has_csv = bool(day and day.get("csv_day"))
+        if has_csv:
+            if not self._confirm_reparse([log_date]):
+                return
+            delete_csv_day(log_date)
+        self._parse_dates([log_date])
+
+    def _confirm_reparse(self, reparse_days: list[str]) -> bool:
+        days_text = ", ".join(reparse_days)
         body = (
-            "Uploaded logs extend beyond the existing parse.\n\n"
-            + "\n\n".join(lines)
-            + "\n\nDelete parsed CSV and re-parse these day(s)?"
+            f"Parsed data already exists for {days_text}.\n\n"
+            "Re-parsing replaces the existing parsed CSV with a fresh parse "
+            "of the stored raw logs.\n\n"
+            "Delete the existing parsed CSV and re-parse?"
         )
         reply = QMessageBox.question(
             self,
@@ -393,14 +404,11 @@ class LogsTab(QWidget):
         return reply == QMessageBox.StandardButton.Yes
 
     @staticmethod
-    def _format_datetime_range(min_value: str, max_value: str) -> str:
-        if min_value and max_value:
-            return f"{min_value} – {max_value}"
-        if max_value:
-            return f"until {max_value}"
-        if min_value:
-            return f"from {min_value}"
-        return "—"
+    def _format_dates(dates: list[str], *, limit: int = 5) -> str:
+        if len(dates) <= limit:
+            return ", ".join(dates)
+        head = ", ".join(dates[:limit])
+        return f"{head} (+{len(dates) - limit} more)"
 
     def _sync_import_message(self) -> None:
         lines = list(self._import_skip_messages)
@@ -412,6 +420,14 @@ class LogsTab(QWidget):
 
     def _set_import_message(self, text: str, *, error: bool = False) -> None:
         self.import_panel.set_message(text, error=error)
+
+    def _cancel_download(self) -> None:
+        worker = self._active_worker
+        if worker is None or not hasattr(worker, "request_cancel"):
+            return
+        worker.request_cancel()
+        self.import_panel.set_cancel_download_enabled(False)
+        self.import_panel.update_progress("Stopping download…", self.import_panel.progress.value())
 
     def _delete_day(self, day_date: str) -> None:
         reply = QMessageBox.question(
@@ -510,7 +526,6 @@ class LogsTab(QWidget):
         self.report_panel.set_status(f"Preview: {shown:,} of {self._report_total:,} rows")
         self.report_panel.set_load_more_enabled(shown < self._report_total)
         self.report_panel.set_export_visible(True)
-        self.report_panel.collapse_filters()
 
     def _append_report_page(self, result) -> None:
         self._report_rows.extend(result.rows)
@@ -527,7 +542,7 @@ class LogsTab(QWidget):
             QMessageBox.warning(self, "Report", str(error))
             return
         self._start_worker(
-            ReportExportWorker(**kwargs),
+            ReportExportWorker(**kwargs, native_pivot=False),
             indeterminate=True,
             on_ok=self._on_export_done,
             status="Export: building report…",
@@ -536,10 +551,22 @@ class LogsTab(QWidget):
     def _on_export_done(self, result) -> None:
         path = Path(result.output_path)
         self._set_status(f"Exported {result.row_count:,} rows to {path.name}")
+        pivot_added = getattr(result, "pivot_added", False)
+        pivot_error = getattr(result, "pivot_error", "")
+        if pivot_error and pivot_added:
+            pivot_note = f"\n\nPivot: {pivot_error}"
+        elif pivot_error:
+            pivot_note = (
+                "\n\nPivot sheet was NOT created (Data and Summary sheets are still "
+                f"available):\n{pivot_error}"
+            )
+        else:
+            pivot_note = ""
         QMessageBox.information(
             self,
             "Export complete",
-            f"Saved {result.row_count:,} rows to Excel:\n{path}\n\nFolder:\n{get_report_output_dir()}",
+            f"Saved {result.row_count:,} rows to Excel:\n{path}\n\n"
+            f"Folder:\n{get_report_output_dir()}{pivot_note}",
         )
 
     def _start_worker(
@@ -548,8 +575,12 @@ class LogsTab(QWidget):
         *,
         indeterminate: bool,
         for_parse: bool = False,
+        progress_phase: str = "",
         on_start=None,
         on_progress=None,
+        on_day_progress=None,
+        on_day_saved=None,
+        on_day_done=None,
         on_ok=None,
         status: str = "",
     ) -> None:
@@ -560,10 +591,11 @@ class LogsTab(QWidget):
         self._active_worker = worker
         if for_parse:
             self.import_panel.set_busy(True)
-            if indeterminate:
-                self.import_panel.set_progress(visible=True, current=0, total=0)
-            else:
-                self.import_panel.set_progress(visible=True, current=0, total=100)
+            self.import_panel.begin_progress(
+                status or "Working…",
+                indeterminate=indeterminate,
+                phase=progress_phase,
+            )
         else:
             self.report_panel.set_progress_visible(True)
             if indeterminate:
@@ -576,13 +608,19 @@ class LogsTab(QWidget):
             on_start()
         if on_progress:
             worker.progress.connect(on_progress)
+        if on_day_progress and hasattr(worker, "day_progress"):
+            worker.day_progress.connect(on_day_progress)
+        if on_day_saved and hasattr(worker, "day_saved"):
+            worker.day_saved.connect(on_day_saved)
+        if on_day_done and hasattr(worker, "day_done"):
+            worker.day_done.connect(on_day_done)
         worker.finished_ok.connect(lambda payload=None: self._worker_done(on_ok, payload, for_parse=for_parse))
         worker.failed.connect(lambda message: self._worker_failed(message, for_parse=for_parse))
         worker.start()
 
     def _worker_done(self, callback, payload, *, for_parse: bool = False) -> None:
         if for_parse:
-            self.import_panel.set_progress(visible=False)
+            self.import_panel.end_progress()
             self.import_panel.set_busy(False)
         else:
             self.report_panel.set_progress_visible(False)
@@ -596,7 +634,7 @@ class LogsTab(QWidget):
     def _worker_failed(self, message: str, *, for_parse: bool = False) -> None:
         self._last_worker_error = message
         if for_parse:
-            self.import_panel.set_progress(visible=False)
+            self.import_panel.end_progress()
             self.import_panel.set_busy(False)
         else:
             self.report_panel.set_progress_visible(False)
@@ -608,16 +646,6 @@ class LogsTab(QWidget):
             self._clear_parsing(success=False)
         elif for_parse:
             self._set_import_message(message, error=True)
-
-    def _set_progress(self, current: int, total: int, label: str, *, parse: bool = False) -> None:
-        if parse:
-            self.import_panel.set_progress(visible=True, current=current, total=total)
-            return
-        progress = self.report_panel.progress
-        if total > 0:
-            progress.setRange(0, total)
-            progress.setValue(current)
-        self._set_status(f"{label} ({current}/{total})" if total else label, parse=parse)
 
     def _set_status(self, text: str, *, parse: bool = False) -> None:
         if parse:

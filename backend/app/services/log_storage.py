@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from pathlib import Path
 from app.parsers.acs_log_parser import _detect_acs_node
 from app.parsers.patterns import TIMESTAMP_RE
 from app.paths import get_log_storage_dir
+
+ELASTIC_NODE = "elastic"
 
 
 @dataclass
@@ -98,6 +101,80 @@ def save_upload(filename: str, content: bytes) -> dict:
     return _record_to_dict(record)
 
 
+def _elastic_log_path(storage_dir: Path, log_date: str) -> Path:
+    return storage_dir / log_date / f"{ELASTIC_NODE}.log"
+
+
+def _elastic_meta_path(storage_dir: Path, log_date: str) -> Path:
+    return storage_dir / log_date / f"{ELASTIC_NODE}.meta.json"
+
+
+def _default_elastic_filename(log_date: str) -> str:
+    return f"solar-acs.{log_date}.log"
+
+
+def has_elastic_log(log_date: str) -> bool:
+    return _elastic_log_path(get_log_storage_dir(), log_date).exists()
+
+
+def elastic_download_complete(log_date: str) -> bool:
+    if not has_elastic_log(log_date):
+        return False
+    meta = read_elastic_meta(log_date)
+    if meta is None:
+        return True
+    return not bool(meta.get("partial", False))
+
+
+def read_elastic_meta(log_date: str) -> dict | None:
+    meta_path = _elastic_meta_path(get_log_storage_dir(), log_date)
+    if not meta_path.exists():
+        return None
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_elastic_log(
+    log_date: str,
+    content: str,
+    *,
+    partial: bool,
+    row_count: int = 0,
+    min_datetime: str = "",
+    max_datetime: str = "",
+) -> dict:
+    storage_dir = get_log_storage_dir()
+    day_dir = storage_dir / log_date
+    day_dir.mkdir(parents=True, exist_ok=True)
+    log_path = _elastic_log_path(storage_dir, log_date)
+    log_path.write_text(content, encoding="utf-8")
+    filename = _default_elastic_filename(log_date)
+    downloaded_at = datetime.now(timezone.utc).isoformat()
+    meta = {
+        "filename": filename,
+        "downloadedAt": downloaded_at,
+        "partial": partial,
+        "rowCount": row_count,
+        "minDateTime": min_datetime,
+        "maxDateTime": max_datetime,
+    }
+    _elastic_meta_path(storage_dir, log_date).write_text(
+        json.dumps(meta), encoding="utf-8"
+    )
+    return {
+        "id": make_file_id(log_date, ELASTIC_NODE),
+        "logDate": log_date,
+        "acsNode": ELASTIC_NODE,
+        "filename": filename,
+        "fileSize": log_path.stat().st_size,
+        "uploadedAt": downloaded_at,
+        "partial": partial,
+        "source": "elastic",
+    }
+
+
 def list_log_files(log_date: str | None = None) -> list[dict]:
     storage_dir = get_log_storage_dir()
     records: list[LogFileRecord] = []
@@ -111,6 +188,7 @@ def list_log_files(log_date: str | None = None) -> list[dict]:
             reverse=True,
         )
 
+    extra: list[dict] = []
     for day_dir in day_dirs:
         date = day_dir.name
         for acs_node in ("acs1", "acs2"):
@@ -121,7 +199,23 @@ def list_log_files(log_date: str | None = None) -> list[dict]:
             filename = meta[0] if meta else f"{acs_node.upper()}_{date}.log"
             records.append(_record_from_path(storage_dir, date, acs_node, filename))
 
-    return [_record_to_dict(record) for record in records]
+        if _elastic_log_path(storage_dir, date).exists():
+            elastic_meta = read_elastic_meta(date) or {}
+            extra.append(
+                {
+                    "id": make_file_id(date, ELASTIC_NODE),
+                    "logDate": date,
+                    "acsNode": ELASTIC_NODE,
+                    "filename": elastic_meta.get("filename")
+                    or _default_elastic_filename(date),
+                    "fileSize": _elastic_log_path(storage_dir, date).stat().st_size,
+                    "uploadedAt": elastic_meta.get("downloadedAt", ""),
+                    "partial": bool(elastic_meta.get("partial", False)),
+                    "source": "elastic",
+                }
+            )
+
+    return [_record_to_dict(record) for record in records] + extra
 
 
 def list_log_days() -> list[dict]:
@@ -133,14 +227,16 @@ def list_log_days() -> list[dict]:
             continue
         acs1 = (day_dir / "acs1.log").exists()
         acs2 = (day_dir / "acs2.log").exists()
-        if not acs1 and not acs2:
+        elastic = (day_dir / f"{ELASTIC_NODE}.log").exists()
+        if not acs1 and not acs2 and not elastic:
             continue
         days.append(
             {
                 "date": day_dir.name,
                 "acs1": acs1,
                 "acs2": acs2,
-                "complete": acs1 and acs2,
+                "elastic": elastic,
+                "complete": elastic or (acs1 and acs2),
             }
         )
 
@@ -162,8 +258,32 @@ def read_log_files_by_ids(file_ids: list[str]) -> list[tuple[str, str]]:
             raise ValueError(f"Log file not found: {file_id}")
         meta = _read_meta(storage_dir / log_date, acs_node)
         filename = meta[0] if meta else path.name
-        parsed_files.append((filename, path.read_text(encoding="utf-8", errors="ignore")))
+        parsed_files.append((filename, path.read_text(encoding="utf-8", errors="replace")))
 
+    return parsed_files
+
+
+def read_day_for_parse(log_date: str) -> list[tuple[str, str]]:
+    storage_dir = get_log_storage_dir()
+    elastic_path = _elastic_log_path(storage_dir, log_date)
+    if elastic_path.exists():
+        meta = read_elastic_meta(log_date) or {}
+        filename = meta.get("filename") or _default_elastic_filename(log_date)
+        return [(filename, elastic_path.read_text(encoding="utf-8", errors="replace"))]
+
+    parsed_files: list[tuple[str, str]] = []
+    missing: list[str] = []
+    for acs_node in ("acs1", "acs2"):
+        path = storage_dir / _storage_path_for(log_date, acs_node)
+        if not path.exists():
+            missing.append(acs_node.upper())
+            continue
+        meta = _read_meta(storage_dir / log_date, acs_node)
+        filename = meta[0] if meta else path.name
+        parsed_files.append((filename, path.read_text(encoding="utf-8", errors="replace")))
+
+    if missing:
+        raise ValueError(f"Missing {', '.join(missing)} log for {log_date}")
     return parsed_files
 
 
@@ -196,11 +316,11 @@ def scan_log_datetime_range(log_date: str) -> tuple[str, str]:
     day_dir = storage_dir / log_date
     min_datetime = ""
     max_datetime = ""
-    for acs_node in ("acs1", "acs2"):
+    for acs_node in ("acs1", "acs2", ELASTIC_NODE):
         log_path = day_dir / f"{acs_node}.log"
         if not log_path.exists():
             continue
-        for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
             match = TIMESTAMP_RE.match(line)
             if not match:
                 continue

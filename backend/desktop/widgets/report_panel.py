@@ -423,9 +423,6 @@ class ReportPanel(QWidget):
     def set_load_more_enabled(self, enabled: bool) -> None:
         self.load_more_btn.setEnabled(enabled)
 
-    def collapse_filters(self) -> None:
-        return
-
     def render_table(self, columns: list[str], rows: list[dict]) -> None:
         self._report_columns = columns
         self.report_table.clear()
@@ -480,6 +477,10 @@ class ReportPanel(QWidget):
         self._custom_sql_dialog.set_sql(self._custom_sql_text)
         self._custom_sql_dialog.set_use_custom(self._custom_sql_enabled)
 
+    def _invalidate_results(self) -> None:
+        if self._has_results:
+            self.clear_results()
+
     def _on_filters_changed(self) -> None:
         if self._syncing_filters:
             return
@@ -487,6 +488,7 @@ class ReportPanel(QWidget):
             self._rebuild_sql_from_filters()
             self._sync_custom_sql_dialog()
         self._update_custom_sql_indicator()
+        self._invalidate_results()
 
     def _on_txn_filter_toggled(self, checked: bool) -> None:
         self.txn_id.setVisible(checked)
@@ -507,6 +509,7 @@ class ReportPanel(QWidget):
         self._rebuild_sql_from_filters()
         self._sync_custom_sql_dialog()
         self._update_custom_sql_indicator()
+        self._invalidate_results()
 
     def _open_custom_sql_dialog(self) -> None:
         if not self._sql_manual:
@@ -531,6 +534,7 @@ class ReportPanel(QWidget):
         if self._custom_sql_dialog:
             self._custom_sql_dialog.set_use_custom(True)
         self._update_custom_sql_indicator()
+        self._invalidate_results()
 
     def _on_dialog_applied(self, enabled: bool, sql: str) -> None:
         self._custom_sql_enabled = enabled
@@ -543,6 +547,7 @@ class ReportPanel(QWidget):
         )
         self._sql_manual = sql.strip() != auto_sql.strip()
         self._update_custom_sql_indicator()
+        self._invalidate_results()
 
     def _update_custom_sql_indicator(self) -> None:
         if self._custom_sql_enabled and self._custom_sql_text.strip():

@@ -1,20 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPointF, Qt, Signal
-from PySide6.QtGui import (
-    QDragEnterEvent,
-    QDragLeaveEvent,
-    QDragMoveEvent,
-    QDropEvent,
-    QPainter,
-    QPen,
-    QPolygonF,
-    QResizeEvent,
-)
+from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
+    QDateEdit,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QProgressBar,
     QScrollArea,
     QSizePolicy,
@@ -29,8 +21,9 @@ from desktop.coverage_utils import (
     STATUS_PARTIAL,
     STATUS_PARSING,
     STATUS_READY,
+    day_has_logs,
 )
-from desktop.widgets.common import danger_ghost_button, primary_button
+from desktop.widgets.common import danger_ghost_button, primary_button, secondary_button
 
 STATUS_PILL_IDS = {
     STATUS_PARSED: "StatusPill",
@@ -42,22 +35,15 @@ STATUS_PILL_IDS = {
 }
 
 
-def _paths_from_drop(event: QDropEvent) -> list[str]:
-    paths: list[str] = []
-    for url in event.mimeData().urls():
-        if url.isLocalFile():
-            path = url.toLocalFile()
-            if path:
-                paths.append(path)
-    return paths
-
-
 class ImportDayCard(QFrame):
     delete_clicked = Signal(str)
+    parse_clicked = Signal(str)
 
     def __init__(self, day: dict, *, busy: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._date = day["date"]
+        self._can_delete = False
+        self._can_parse = False
         self.setObjectName("ImportDayDetail")
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
@@ -122,6 +108,9 @@ class ImportDayCard(QFrame):
 
         actions = QHBoxLayout()
         actions.addStretch()
+        self.parse_btn = secondary_button("Parse")
+        self.parse_btn.clicked.connect(lambda: self.parse_clicked.emit(self._date))
+        actions.addWidget(self.parse_btn)
         self.delete_btn = danger_ghost_button("Delete day data")
         self.delete_btn.clicked.connect(lambda: self.delete_clicked.emit(self._date))
         actions.addWidget(self.delete_btn)
@@ -164,106 +153,37 @@ class ImportDayCard(QFrame):
         self.coverage_label.style().unpolish(self.coverage_label)
         self.coverage_label.style().polish(self.coverage_label)
 
+        log_day = day.get("log_day") or {}
+        has_logs = day_has_logs(log_day)
+
         failed_message = day.get("failed_message", "")
         if failed_message:
             self.error_label.setText(failed_message)
             self.error_frame.setVisible(True)
-        elif status == STATUS_MISSING:
-            log_day = day.get("log_day") or {}
-            missing = [node.upper() for node in ("acs1", "acs2") if not log_day.get(node)]
-            if missing:
-                self.error_label.setText(f"Missing {', '.join(missing)} log")
-                self.error_frame.setVisible(True)
-            else:
-                self.error_frame.setVisible(False)
+        elif status == STATUS_MISSING and not has_logs:
+            self.error_label.setText("No logs downloaded for this day")
+            self.error_frame.setVisible(True)
         else:
             self.error_frame.setVisible(False)
 
-        has_data = bool(day.get("log_day")) or bool(csv_day)
-        self._can_delete = has_data
+        self._can_delete = has_logs or bool(csv_day)
+        self._can_parse = has_logs
+        self.parse_btn.setText("Re-parse" if csv_day else "Parse")
 
     def set_busy(self, busy: bool) -> None:
         self.delete_btn.setEnabled(self._can_delete and not busy)
-
-
-class DropFileIcon(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFixedSize(80, 96)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-
-    def paintEvent(self, event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        doc_left = 14.0
-        doc_top = 8.0
-        doc_width = 44.0
-        doc_height = 56.0
-        fold = 12.0
-
-        painter.setPen(QPen(Qt.GlobalColor.white, 2.0))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(int(doc_left), int(doc_top), int(doc_width), int(doc_height), 6, 6)
-
-        fold_path = QPolygonF(
-            [
-                QPointF(doc_left + doc_width - fold, doc_top),
-                QPointF(doc_left + doc_width, doc_top + fold),
-                QPointF(doc_left + doc_width - fold, doc_top + fold),
-            ]
-        )
-        painter.drawPolyline(fold_path)
-
-        line_pen = QPen(Qt.GlobalColor.white, 1.5)
-        painter.setPen(line_pen)
-        line_left = doc_left + 10
-        line_right = doc_left + doc_width - 10
-        for index, y in enumerate((doc_top + 22, doc_top + 32, doc_top + 42)):
-            if index == 2:
-                line_right -= 8
-            painter.drawLine(int(line_left), int(y), int(line_right), int(y))
-
-        badge_center_x = doc_left + doc_width / 2
-        badge_center_y = doc_top + doc_height + 14
-        badge_radius = 14.0
-        painter.setPen(QPen(Qt.GlobalColor.white, 2.0))
-        painter.setBrush(Qt.GlobalColor.white)
-        painter.drawEllipse(
-            int(badge_center_x - badge_radius),
-            int(badge_center_y - badge_radius),
-            int(badge_radius * 2),
-            int(badge_radius * 2),
-        )
-
-        plus_pen = QPen(Qt.GlobalColor.black, 2.2)
-        painter.setPen(plus_pen)
-        plus_size = 7.0
-        painter.drawLine(
-            int(badge_center_x - plus_size),
-            int(badge_center_y),
-            int(badge_center_x + plus_size),
-            int(badge_center_y),
-        )
-        painter.drawLine(
-            int(badge_center_x),
-            int(badge_center_y - plus_size),
-            int(badge_center_x),
-            int(badge_center_y + plus_size),
-        )
+        self.parse_btn.setEnabled(self._can_parse and not busy)
 
 
 class ImportParsePanel(QWidget):
-    load_requested = Signal()
-    files_dropped = Signal(list)
+    download_requested = Signal(str, str)
+    cancel_download_requested = Signal()
+    parse_requested = Signal(str)
     delete_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ImportParsePanel")
-        self.setAcceptDrops(True)
-        self._drag_active = False
-        self._drag_depth = 0
         self._busy = False
         self._day_cards: list[ImportDayCard] = []
 
@@ -271,32 +191,86 @@ class ImportParsePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.drop_zone = QFrame()
-        self.drop_zone.setObjectName("ImportDropZone")
-        self.drop_zone.setAcceptDrops(True)
-        layout.addWidget(self.drop_zone, stretch=1)
+        self.content_frame = QFrame()
+        self.content_frame.setObjectName("ImportContentFrame")
+        layout.addWidget(self.content_frame, stretch=1)
 
-        inner = QVBoxLayout(self.drop_zone)
+        inner = QVBoxLayout(self.content_frame)
         inner.setContentsMargins(20, 20, 20, 20)
         inner.setSpacing(14)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(12)
-        title = QLabel("Import")
+        title = QLabel("Import from Elastic")
         title.setObjectName("ImportPanelTitle")
         self.panel_title = title
         toolbar.addWidget(title)
         toolbar.addStretch()
-        self.load_btn = primary_button("Load logs")
-        toolbar.addWidget(self.load_btn)
+
+        from_label = QLabel("From")
+        from_label.setObjectName("FieldLabel")
+        toolbar.addWidget(from_label)
+        self.date_from = QDateEdit()
+        self.date_from.setObjectName("ImportDateEdit")
+        self.date_from.setCalendarPopup(True)
+        self.date_from.setDisplayFormat("yyyy-MM-dd")
+        self.date_from.setMaximumDate(QDate.currentDate())
+        self.date_from.setDate(QDate.currentDate().addDays(-1))
+        toolbar.addWidget(self.date_from)
+
+        to_label = QLabel("To")
+        to_label.setObjectName("FieldLabel")
+        toolbar.addWidget(to_label)
+        self.date_to = QDateEdit()
+        self.date_to.setObjectName("ImportDateEdit")
+        self.date_to.setCalendarPopup(True)
+        self.date_to.setDisplayFormat("yyyy-MM-dd")
+        self.date_to.setMaximumDate(QDate.currentDate())
+        self.date_to.setDate(QDate.currentDate().addDays(-1))
+        toolbar.addWidget(self.date_to)
+
+        self.download_btn = primary_button("Download from Elastic")
+        toolbar.addWidget(self.download_btn)
         inner.addLayout(toolbar)
+
+        self.date_from.dateChanged.connect(self._sync_to_minimum)
+
+        self.progress_box = QFrame()
+        self.progress_box.setObjectName("ImportProgressBox")
+        self.progress_box.setVisible(False)
+        progress_layout = QVBoxLayout(self.progress_box)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(8)
+
+        self.progress_caption = QLabel("")
+        self.progress_caption.setObjectName("ImportProgressCaption")
+        self.progress_caption.setWordWrap(True)
+        progress_layout.addWidget(self.progress_caption)
 
         self.progress = QProgressBar()
         self.progress.setObjectName("ImportProgress")
-        self.progress.setFixedHeight(4)
-        self.progress.setTextVisible(False)
-        self.progress.setVisible(False)
-        inner.addWidget(self.progress)
+        self.progress.setFixedHeight(18)
+        self.progress.setTextVisible(True)
+        self.progress.setRange(0, 100)
+        progress_layout.addWidget(self.progress)
+
+        cancel_row = QHBoxLayout()
+        cancel_row.addStretch()
+        self.cancel_download_btn = danger_ghost_button("Stop download")
+        self.cancel_download_btn.setVisible(False)
+        self.cancel_download_btn.clicked.connect(self.cancel_download_requested.emit)
+        cancel_row.addWidget(self.cancel_download_btn)
+        progress_layout.addLayout(cancel_row)
+
+        self.progress_list = QListWidget()
+        self.progress_list.setObjectName("ImportProgressList")
+        self.progress_list.setMaximumHeight(120)
+        self.progress_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.progress_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.progress_list.setVisible(False)
+        progress_layout.addWidget(self.progress_list)
+
+        inner.addWidget(self.progress_box)
 
         self.message_label = QLabel("")
         self.message_label.setObjectName("ImportMessage")
@@ -345,42 +319,19 @@ class ImportParsePanel(QWidget):
 
         inner.addWidget(self.content_area, stretch=1)
 
-        self.drag_overlay = QFrame(self)
-        self.drag_overlay.setObjectName("ImportDragOverlay")
-        self.drag_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.drag_overlay.setVisible(False)
-        overlay_layout = QVBoxLayout(self.drag_overlay)
-        overlay_layout.setContentsMargins(0, 0, 0, 0)
-        overlay_layout.addStretch()
-        self.drop_icon = DropFileIcon()
-        overlay_layout.addWidget(self.drop_icon, alignment=Qt.AlignmentFlag.AlignCenter)
-        overlay_layout.addStretch()
+        self.download_btn.clicked.connect(self._emit_download)
 
-        self.load_btn.clicked.connect(self.load_requested.emit)
-        self._install_drag_filters(self.drop_zone)
-        self.installEventFilter(self)
-        self.drag_overlay.installEventFilter(self)
-        self.drop_icon.installEventFilter(self)
+    def _sync_to_minimum(self, new_from: QDate) -> None:
+        if self.date_to.date() < new_from:
+            self.date_to.setDate(new_from)
 
-    def _install_drag_filters(self, root: QWidget) -> None:
-        root.installEventFilter(self)
-        for child in root.findChildren(QWidget):
-            child.installEventFilter(self)
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self._sync_drag_overlay()
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        self._sync_drag_overlay()
-
-    def _sync_drag_overlay(self) -> None:
-        if self.width() <= 0 or self.height() <= 0:
+    def _emit_download(self) -> None:
+        if self._busy:
             return
-        self.drag_overlay.setGeometry(0, 0, self.width(), self.height())
-        if self._drag_active:
-            self.drag_overlay.raise_()
+        self.download_requested.emit(
+            self.date_from.date().toString("yyyy-MM-dd"),
+            self.date_to.date().toString("yyyy-MM-dd"),
+        )
 
     def _clear_day_cards(self) -> None:
         for card in self._day_cards:
@@ -410,16 +361,17 @@ class ImportParsePanel(QWidget):
         for day in days:
             card = ImportDayCard(day, busy=self._busy)
             card.delete_clicked.connect(self.delete_requested.emit)
+            card.parse_clicked.connect(self.parse_requested.emit)
             self._day_cards.append(card)
             self.days_layout.addWidget(card)
 
     def set_busy(self, busy: bool) -> None:
         self._busy = busy
-        self.load_btn.setEnabled(not busy)
+        self.download_btn.setEnabled(not busy)
+        self.date_from.setEnabled(not busy)
+        self.date_to.setEnabled(not busy)
         for card in self._day_cards:
             card.set_busy(busy)
-        if not busy:
-            self._set_drag_active(False)
 
     def set_message(self, text: str, *, error: bool = False) -> None:
         self.message_label.setText(text)
@@ -432,81 +384,55 @@ class ImportParsePanel(QWidget):
     def clear_message(self) -> None:
         self.set_message("", error=False)
 
-    def set_progress(self, *, visible: bool, current: int = 0, total: int = 0) -> None:
-        self.progress.setVisible(visible)
-        if not visible:
-            self.progress.setRange(0, 100)
-            self.progress.setValue(0)
-            return
-        if total <= 0:
+    def begin_progress(
+        self,
+        title: str,
+        *,
+        indeterminate: bool = False,
+        phase: str = "",
+    ) -> None:
+        self.progress_list.clear()
+        self.progress_list.setVisible(False)
+        self.progress_caption.setText(title)
+        if indeterminate:
             self.progress.setRange(0, 0)
         else:
-            self.progress.setRange(0, total)
-            self.progress.setValue(current)
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+        self._set_progress_phase(phase)
+        self.cancel_download_btn.setVisible(phase == "download")
+        self.cancel_download_btn.setEnabled(phase == "download")
+        self.progress_box.setVisible(True)
 
-    def _set_drag_active(self, active: bool) -> None:
-        if self._drag_active == active:
-            return
-        self._drag_active = active
-        self.drop_zone.setProperty("dragActive", active)
-        self.drop_zone.style().unpolish(self.drop_zone)
-        self.drop_zone.style().polish(self.drop_zone)
-        if active:
-            self._sync_drag_overlay()
-            self.drag_overlay.setVisible(True)
-            self.drag_overlay.raise_()
-        else:
-            self.drag_overlay.setVisible(False)
+    def update_progress(self, caption: str, percent: int, *, phase: str | None = None) -> None:
+        self.progress_caption.setText(caption)
+        if phase is not None:
+            self._set_progress_phase(phase)
+        if self.progress.maximum() != 0:
+            self.progress.setValue(max(0, min(100, percent)))
 
-    def _accept_drag(self, event: QDragEnterEvent | QDragMoveEvent) -> bool:
-        if self._busy or not event.mimeData().hasUrls():
-            event.ignore()
-            return False
-        event.acceptProposedAction()
-        return True
+    def _set_progress_phase(self, phase: str) -> None:
+        value = phase or ""
+        self.progress.setProperty("phase", value)
+        self.progress_caption.setProperty("phase", value)
+        for widget in (self.progress, self.progress_caption):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
 
-    def eventFilter(self, obj, event) -> bool:
-        if event.type() in (
-            QEvent.Type.DragEnter,
-            QEvent.Type.DragMove,
-            QEvent.Type.DragLeave,
-            QEvent.Type.Drop,
-        ):
-            if event.type() == QEvent.Type.DragEnter:
-                self.dragEnterEvent(event)
-            elif event.type() == QEvent.Type.DragMove:
-                self.dragMoveEvent(event)
-            elif event.type() == QEvent.Type.DragLeave:
-                self.dragLeaveEvent(event)
-            else:
-                self.dropEvent(event)
-            return True
-        return super().eventFilter(obj, event)
+    def add_progress_item(self, text: str) -> None:
+        self.progress_list.addItem(text)
+        self.progress_list.setVisible(True)
+        self.progress_list.scrollToBottom()
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if not self._accept_drag(event):
-            return
-        self._drag_depth += 1
-        self._set_drag_active(True)
+    def set_cancel_download_enabled(self, enabled: bool) -> None:
+        self.cancel_download_btn.setEnabled(enabled)
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
-        self._accept_drag(event)
-
-    def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
-        self._drag_depth = max(0, self._drag_depth - 1)
-        if self._drag_depth == 0:
-            self._set_drag_active(False)
-        event.accept()
-
-    def dropEvent(self, event: QDropEvent) -> None:
-        self._drag_depth = 0
-        self._set_drag_active(False)
-        if self._busy:
-            event.ignore()
-            return
-        paths = _paths_from_drop(event)
-        if not paths:
-            event.ignore()
-            return
-        event.acceptProposedAction()
-        self.files_dropped.emit(paths)
+    def end_progress(self) -> None:
+        self.progress_box.setVisible(False)
+        self.progress_caption.setText("")
+        self.progress_list.clear()
+        self.progress_list.setVisible(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.cancel_download_btn.setVisible(False)
+        self._set_progress_phase("")
