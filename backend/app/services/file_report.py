@@ -13,6 +13,7 @@ from app.parsers.csv_writer import CSV_DELIMITER, duckdb_read_csv_delim
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import CSV_TO_DB, list_all_csv_paths, resolve_csv_paths_for_dates
 from app.services.device_detection import parse_browser_device
+from app.services.card_champions import append_champion_sheets, is_single_day_date_report
 from app.services.report import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -668,6 +669,8 @@ def export_report_xlsx(
     )
     summary = _compute_summary(cached.connection, cached.columns, cached.total)
     _save_report_xlsx(cached.connection, cached.columns, output_path, summary, cached.total)
+    if is_single_day_date_report(mode=mode, date_from=date_from, date_to=date_to):
+        append_champion_sheets(cached.connection, output_path)
 
     pivot_added = False
     pivot_error = ""

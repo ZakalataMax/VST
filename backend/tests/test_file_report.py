@@ -266,6 +266,62 @@ class FileReportTest(unittest.TestCase):
         total = sum(row[1].value for row in summary.iter_rows(min_row=2))
         self.assertEqual(total, export.row_count)
 
+    def test_single_day_export_includes_champion_sheets(self) -> None:
+        from openpyxl import load_workbook
+
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000", acct="4111111111111111"),
+                _ares("T1", "2026-06-20 10:00:01.000"),
+                _areq("T2", "2026-06-20 10:15:00.000", acct="4111111111111111"),
+                _ares("T2", "2026-06-20 10:15:01.000"),
+                _areq("T3", "2026-06-20 11:00:00.000", acct="5555555555554444"),
+                _ares("T3", "2026-06-20 11:00:01.000"),
+            ]
+        )
+        export = file_report.export_report_xlsx(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+            native_pivot=False,
+        )
+        workbook = load_workbook(export.output_path)
+        self.assertIn("Champions", workbook.sheetnames)
+        self.assertIn("Champion Attempts", workbook.sheetnames)
+
+        champions = workbook["Champions"]
+        champion_header = [cell.value for cell in champions[1]]
+        self.assertEqual(champion_header[0], "champion_rank")
+        self.assertEqual(champions[2][0].value, 1)
+        self.assertEqual(champions[2][2].value, "411111******1111")
+        self.assertEqual(champions[2][5].value, 2)
+        self.assertEqual(champions[3][0].value, 2)
+        self.assertEqual(champions[3][5].value, 1)
+
+        attempts = workbook["Champion Attempts"]
+        attempt_header = [cell.value for cell in attempts[1]]
+        self.assertEqual(attempt_header[4], "attempt_no")
+        self.assertEqual(attempts[2][0].value, 1)
+        self.assertEqual(attempts[2][4].value, 1)
+        self.assertEqual(attempts[3][0].value, 1)
+        self.assertEqual(attempts[3][4].value, 2)
+        self.assertEqual(export.row_count, 3)
+
+    def test_multi_day_export_skips_champion_sheets(self) -> None:
+        from openpyxl import load_workbook
+
+        self._seed_day("2026-06-20", "T1")
+        self._seed_day("2026-06-21", "T2")
+        export = file_report.export_report_xlsx(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-21 23:59:59",
+            native_pivot=False,
+        )
+        workbook = load_workbook(export.output_path)
+        self.assertNotIn("Champions", workbook.sheetnames)
+        self.assertNotIn("Champion Attempts", workbook.sheetnames)
+
     def test_pagination_is_consistent_across_pages(self) -> None:
         save_daily_csvs(
             [
