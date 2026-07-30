@@ -5,13 +5,14 @@ import os
 import re
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.jobs.daily_report import rolling_window, run_daily_report
+from app.parsers.models import MessageRow
 from app.services import elastic_logs
+from app.services.csv_storage import save_daily_csvs
 from app.services.elastic_logs import ElasticRequestError
-from app.services.email_sender import SmtpConfig, build_message
 
 _RANGE_RE = re.compile(r">= '([^']+)' AND timestamp < '([^']+)'")
 
@@ -57,8 +58,9 @@ class RollingWindowTest(unittest.TestCase):
 class DailyReportTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        keys = ("LOG_STORAGE_DIR", "CSV_STORAGE_DIR", "REPORT_OUTPUT_DIR")
+        keys = ("LOG_STORAGE_DIR", "CSV_STORAGE_DIR", "REPORT_OUTPUT_DIR", "REPORT_EMAIL_TO")
         self._saved = {key: os.environ.get(key) for key in keys}
+        os.environ.pop("REPORT_EMAIL_TO", None)
         base = Path(self._tmp.name)
         os.environ["LOG_STORAGE_DIR"] = str(base / "logs")
         os.environ["CSV_STORAGE_DIR"] = str(base / "csv")
@@ -76,47 +78,42 @@ class DailyReportTest(unittest.TestCase):
         return datetime(2026, 6, 25, 7, 0, 0, tzinfo=elastic_logs._tz())
 
     def test_successful_run_exports_and_emails(self) -> None:
-        sent: list[tuple] = []
-        config = SmtpConfig(
-            host="smtp.local",
-            port=587,
-            tls="none",
-            user="",
-            password="",
-            sender="vst@local",
-            recipients=["ops@local"],
-            subject="VST daily report",
-        )
+        os.environ["REPORT_EMAIL_TO"] = "ops@local"
+        sent: list[dict] = []
+
+        def fake_sender(**kwargs) -> str:
+            sent.append(kwargs)
+            return f"sent to {', '.join(kwargs['recipients'])}"
+
         summary = run_daily_report(
             now=self._now(),
             executor=_good_executor,
-            email_sender=lambda cfg, body, path: sent.append((cfg, body, path)),
-            smtp_config=config,
-            total_days=2,
+            mail_sender=fake_sender,
+            download_days=2,
+            report_days=2,
         )
         self.assertTrue(summary.ok, summary.failed)
         self.assertEqual(summary.parsed, ["2026-06-24", "2026-06-25"])
         self.assertTrue(Path(summary.report_path).exists())
         self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["recipients"], ["ops@local"])
         self.assertIn("ops@local", summary.email_status)
+        self.assertTrue(summary.pivot_status)
 
     def test_missing_required_day_fails_without_email(self) -> None:
-        sent: list[tuple] = []
+        os.environ["REPORT_EMAIL_TO"] = "ops@local"
+        sent: list[dict] = []
+
+        def fake_sender(**kwargs) -> str:
+            sent.append(kwargs)
+            return "sent"
+
         summary = run_daily_report(
             now=self._now(),
             executor=_executor_failing_on("2026-06-24"),
-            email_sender=lambda cfg, body, path: sent.append((cfg, body, path)),
-            smtp_config=SmtpConfig(
-                host="smtp.local",
-                port=587,
-                tls="none",
-                user="",
-                password="",
-                sender="vst@local",
-                recipients=["ops@local"],
-                subject="s",
-            ),
-            total_days=2,
+            mail_sender=fake_sender,
+            download_days=2,
+            report_days=2,
         )
         self.assertFalse(summary.ok)
         self.assertIn("2026-06-24", summary.failed.get("report", ""))
@@ -124,38 +121,46 @@ class DailyReportTest(unittest.TestCase):
         self.assertEqual(summary.report_path, "")
 
     def test_skips_email_when_not_configured(self) -> None:
+        os.environ["REPORT_EMAIL_TO"] = ""
         summary = run_daily_report(
             now=self._now(),
             executor=_good_executor,
-            smtp_config=None,
-            total_days=2,
+            download_days=2,
+            report_days=2,
         )
         self.assertTrue(summary.ok, summary.failed)
         self.assertIn("skipped", summary.email_status)
 
-
-class EmailMessageTest(unittest.TestCase):
-    def test_build_message_with_attachment(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            attachment = Path(tmp) / "report.xlsx"
-            attachment.write_bytes(b"xlsx-bytes")
-            config = SmtpConfig(
-                host="smtp.local",
-                port=587,
-                tls="starttls",
-                user="u",
-                password="p",
-                sender="from@local",
-                recipients=["a@local", "b@local"],
-                subject="Subject",
+    def test_download_window_smaller_than_report_window(self) -> None:
+        # Report window is 2026-06-16..2026-06-25; the download window only refreshes the
+        # last 2 days, so every earlier day needs a pre-existing parsed CSV on disk.
+        for day_offset in range(8):
+            day = date(2026, 6, 16) + timedelta(days=day_offset)
+            save_daily_csvs(
+                [
+                    MessageRow(
+                        log_file="elastic.log",
+                        message_datetime=f"{day.isoformat()} 10:00:00.000",
+                        message_type="AReq",
+                        three_ds_server_trans_id=f"old-txn-{day_offset}",
+                        acct_number="4111111111111111",
+                    )
+                ]
             )
-            message = build_message(config, body="hello", attachment_path=attachment)
-            self.assertEqual(message["From"], "from@local")
-            self.assertEqual(message["To"], "a@local, b@local")
-            self.assertEqual(message["Subject"], "Subject")
-            attachments = list(message.iter_attachments())
-            self.assertEqual(len(attachments), 1)
-            self.assertEqual(attachments[0].get_filename(), "report.xlsx")
+
+        summary = run_daily_report(
+            now=self._now(),
+            executor=_good_executor,
+            download_days=2,
+            report_days=10,
+        )
+
+        self.assertTrue(summary.ok, summary.failed)
+        self.assertEqual(summary.downloaded, ["2026-06-24", "2026-06-25"])
+        self.assertEqual(summary.parsed, ["2026-06-24", "2026-06-25"])
+        self.assertEqual(summary.window[0], "2026-06-16")
+        self.assertEqual(summary.window[-1], "2026-06-25")
+        self.assertTrue(Path(summary.report_path).exists())
 
 
 if __name__ == "__main__":

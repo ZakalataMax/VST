@@ -321,6 +321,12 @@ class ImportParsePanel(QWidget):
 
         self.download_btn.clicked.connect(self._emit_download)
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        today = QDate.currentDate()
+        self.date_from.setMaximumDate(today)
+        self.date_to.setMaximumDate(today)
+
     def _sync_to_minimum(self, new_from: QDate) -> None:
         if self.date_to.date() < new_from:
             self.date_to.setDate(new_from)

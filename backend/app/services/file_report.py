@@ -231,18 +231,18 @@ def _build_report_output_name(
 
 PIVOT_ROW_FIELD = "txn_result"
 PIVOT_VALUE_FIELD = "threedsservertransid"
-NATIVE_PIVOT_MAX_ROWS = 5_000
 SUMMARY_APPEND_MAX_ROWS = 25_000
 PIVOT_ROW_FIELDS = [
     "r02",
     "areq_messagedate",
+    "browser_os",
+    "browser_model",
     "oob_missing_day",
     "final_cres_status",
     "txn_timeline",
     "browser_user_agent",
     "merchant_name",
-    "browser_os",
-    "browser_model",
+    "three_ds_requestor_info",
     "threedsservertransid",
     "oob_missing",
 ]
@@ -365,28 +365,6 @@ def _can_build_pivot(columns: list[str], total: int) -> bool:
     return all(field in columns for field in PIVOT_ROW_FIELDS)
 
 
-def _add_refresh_on_open_pivot(
-    output_path: Path,
-    columns: list[str],
-    total: int,
-) -> bool:
-    from openpyxl import load_workbook
-
-    from app.services.excel_pivot import add_pivot_sheet
-
-    workbook = load_workbook(output_path)
-    added = add_pivot_sheet(
-        workbook,
-        columns=columns,
-        total=total,
-        row_fields=PIVOT_ROW_FIELDS,
-        value_field=PIVOT_VALUE_FIELD,
-    )
-    if added:
-        workbook.save(output_path)
-    return added
-
-
 def _add_report_pivot(
     output_path: Path,
     columns: list[str],
@@ -399,30 +377,21 @@ def _add_report_pivot(
 
     from app.services.excel_pivot import add_native_pivot, native_pivot_available
 
-    if total <= NATIVE_PIVOT_MAX_ROWS and native_pivot_available():
-        try:
-            add_native_pivot(
-                output_path,
-                data_sheet="Data",
-                data_rows=total,
-                data_cols=len(columns),
-                row_fields=PIVOT_ROW_FIELDS,
-                value_field=PIVOT_VALUE_FIELD,
-            )
-            return True, ""
-        except Exception as error:
-            if _add_refresh_on_open_pivot(output_path, columns, total):
-                return True, (
-                    "Excel automation failed, added a refresh-on-open pivot instead "
-                    f"(open in Excel to populate it): {error}"
-                )
-            return False, str(error)
+    if not native_pivot_available():
+        return False, "Excel is not available on this machine. Pivot sheet was not created."
 
-    if _add_refresh_on_open_pivot(output_path, columns, total):
-        return True, (
-            "Added a refresh-on-open pivot. Open the file in Excel to populate it."
+    try:
+        add_native_pivot(
+            output_path,
+            data_sheet="Data",
+            data_rows=total,
+            data_cols=len(columns),
+            row_fields=PIVOT_ROW_FIELDS,
+            value_field=PIVOT_VALUE_FIELD,
         )
-    return False, "Could not build the pivot sheet."
+        return True, ""
+    except Exception as error:
+        return False, f"Excel automation failed, pivot sheet was not created: {error}"
 
 
 @dataclass
@@ -433,6 +402,7 @@ class ReportExportResult:
     output_path: Path
     pivot_added: bool = False
     pivot_error: str = ""
+    email_status: str = ""
 
 
 def _sql_has_report_placeholders(sql: str) -> bool:
@@ -701,13 +671,19 @@ def export_report_xlsx(
 
     pivot_added = False
     pivot_error = ""
-    if native_pivot and _can_build_pivot(cached.columns, cached.total):
-        pivot_added, pivot_error = _add_report_pivot(
-            output_path,
-            cached.columns,
-            cached.total,
-            native_pivot=native_pivot,
-        )
+    if native_pivot and cached.total > 0:
+        if _can_build_pivot(cached.columns, cached.total):
+            pivot_added, pivot_error = _add_report_pivot(
+                output_path,
+                cached.columns,
+                cached.total,
+                native_pivot=native_pivot,
+            )
+        else:
+            pivot_error = (
+                "Pivot sheet was not created: the report is missing one or more columns the "
+                "pivot needs (likely because Custom SQL doesn't select them)."
+            )
 
     return ReportExportResult(
         columns=cached.columns,

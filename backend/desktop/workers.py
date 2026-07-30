@@ -17,6 +17,7 @@ from app.services.log_storage import (
     read_day_for_parse,
     save_elastic_log,
 )
+from app.services.report_mailer import send_report, subject_from_env
 
 
 @dataclass
@@ -190,13 +191,34 @@ class ReportExportWorker(QThread):
     finished_ok = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        email_recipients: list[str] | None = None,
+        email_body: str | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__()
         self._kwargs = kwargs
+        self._email_recipients = email_recipients
+        self._email_body = email_body
 
     def run(self) -> None:
         try:
             result = export_report_xlsx(**self._kwargs)
+            if self._email_recipients:
+                result.email_status = self._send_email(result)
             self.finished_ok.emit(result)
         except Exception as error:
             self.failed.emit(str(error))
+
+    def _send_email(self, result) -> str:
+        body = self._email_body or (
+            f"ACS Approval Rate report attached.\n\nRows: {result.row_count:,}\nFile: {result.file_name}"
+        )
+        return send_report(
+            recipients=self._email_recipients,
+            subject=subject_from_env(),
+            body=body,
+            attachment_path=result.output_path,
+        )

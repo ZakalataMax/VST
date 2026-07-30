@@ -42,13 +42,24 @@ def _cres(txn: str, when: str, *, status: str = "Y") -> MessageRow:
 
 
 class FileReportTest(unittest.TestCase):
-    def test_pivot_row_fields_include_browser_before_txn_id(self) -> None:
-        fields = file_report.PIVOT_ROW_FIELDS
-        self.assertEqual(fields.index("r02"), 0)
-        self.assertEqual(fields[fields.index("threedsservertransid") - 2 : fields.index("threedsservertransid")], [
-            "browser_os",
-            "browser_model",
-        ])
+    def test_pivot_row_fields_order(self) -> None:
+        self.assertEqual(
+            file_report.PIVOT_ROW_FIELDS,
+            [
+                "r02",
+                "areq_messagedate",
+                "browser_os",
+                "browser_model",
+                "oob_missing_day",
+                "final_cres_status",
+                "txn_timeline",
+                "browser_user_agent",
+                "merchant_name",
+                "three_ds_requestor_info",
+                "threedsservertransid",
+                "oob_missing",
+            ],
+        )
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -294,6 +305,57 @@ class FileReportTest(unittest.TestCase):
         )
         second = file_report.run_report_query(**kwargs)
         self.assertEqual(second.row_count, 2)
+
+    def test_native_pivot_has_no_row_cap(self) -> None:
+        from unittest.mock import patch
+
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _areq("T2", "2026-06-20 11:00:00.000"),
+            ]
+        )
+        with patch("app.services.excel_pivot.native_pivot_available", return_value=True), patch(
+            "app.services.excel_pivot.add_native_pivot"
+        ) as mock_add_native_pivot:
+            export = file_report.export_report_xlsx(
+                mode="date",
+                date_from="2026-06-20 00:00:00",
+                date_to="2026-06-20 23:59:59",
+                native_pivot=True,
+            )
+        mock_add_native_pivot.assert_called_once()
+        self.assertTrue(export.pivot_added)
+        self.assertEqual(export.pivot_error, "")
+
+    def test_native_pivot_reports_when_excel_unavailable(self) -> None:
+        from unittest.mock import patch
+
+        save_daily_csvs([_areq("T1", "2026-06-20 10:00:00.000")])
+        with patch("app.services.excel_pivot.native_pivot_available", return_value=False):
+            export = file_report.export_report_xlsx(
+                mode="date",
+                date_from="2026-06-20 00:00:00",
+                date_to="2026-06-20 23:59:59",
+                native_pivot=True,
+            )
+        self.assertFalse(export.pivot_added)
+        self.assertIn("Excel is not available", export.pivot_error)
+
+    def test_native_pivot_warns_when_columns_missing(self) -> None:
+        self._seed_day("2026-06-20", "T1")
+        export = file_report.export_report_xlsx(
+            mode="custom",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+            sql=(
+                "SELECT threedsservertransid, messagedatetime AS areq_messagedatetime "
+                "FROM cust_acs_3dsmess WHERE messagetype = 'AReq'"
+            ),
+            native_pivot=True,
+        )
+        self.assertFalse(export.pivot_added)
+        self.assertIn("missing one or more columns", export.pivot_error)
 
     def test_resolve_missing_day_lists_all_missing(self) -> None:
         self._seed_day("2026-06-20", "T1")

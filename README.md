@@ -125,8 +125,56 @@ Enable **Custom SQL** to edit the query. On first enable, the template from
 Custom SQL is restricted to a single `SELECT`/`WITH` statement. File-access functions
 (`read_csv`, `read_parquet`, `glob`, ...) and any DDL/DML are rejected.
 
-## Future automation
+## Automation (scheduled daily report)
 
-A scheduled CLI worker is planned to run the rolling daily flow unattended (download the
-last full days plus the current day so far, parse, build the report, and email it via
-SMTP). It will reuse the same services as the desktop app.
+`app/jobs/daily_report.py` runs the rolling flow unattended: download+parse the last
+`DAILY_JOB_DOWNLOAD_DAYS` days (default **2**), build a report over the last
+`DAILY_JOB_REPORT_DAYS` days (default **10**), export it, and email it via the local,
+already-signed-in Outlook desktop app (COM automation). Older days in the report window
+must already have a parsed CSV on disk (from previous runs) — if one is missing, the run
+fails loudly instead of emailing a partial report.
+
+**Run it once manually**, from `backend/`:
+
+```bat
+python -m desktop --auto-report
+```
+
+Same entry point works once `VST.exe` is rebuilt: `VST.exe --auto-report` opens no window,
+runs the job, and exits with a status code (0 = ok).
+
+Every run writes `run-summary-*.json` next to the reports (full JSON: days
+downloaded/parsed, report path, pivot status, email status, failures) regardless of
+success or failure.
+
+### Windows Task Scheduler
+
+`backend/run_auto_report.bat` is the entry point for the scheduled task. It always launches
+the **built** `dist\VST.exe --auto-report` (never runs from source) so the scheduled job
+uses exactly the code that was last built and tested, sharing the same `dist/data/...`
+storage as the exe you use day to day. Rebuild `dist/VST.exe` (`build.bat`) whenever
+`backend/` source changes — the scheduled task will not pick up source edits until then.
+
+Create the task (daily at 07:00, only runs while logged in — required for Outlook COM):
+
+```cmd
+schtasks /create /tn "VST Daily Report" /tr "\"C:\path\to\backend\run_auto_report.bat\"" /sc daily /st 07:00 /it /f
+```
+
+Manage it:
+
+```cmd
+schtasks /query /tn "VST Daily Report" /v /fo list   REM inspect current config
+schtasks /change /tn "VST Daily Report" /st 08:30     REM change the trigger time
+schtasks /run /tn "VST Daily Report"                  REM run right now, on demand
+schtasks /change /tn "VST Daily Report" /disable      REM pause
+schtasks /change /tn "VST Daily Report" /enable       REM resume
+schtasks /delete /tn "VST Daily Report" /f             REM remove entirely
+```
+
+(From Git Bash, prefix these with `MSYS_NO_PATHCONV=1` — otherwise it mangles the
+`/tn`-style flags.)
+
+Check results: Task Scheduler's **History** tab for the task (started/completed, exit
+code), `backend/data/auto_report.log` (full stdout/stderr of every run, appended), or the
+`run-summary-*.json` files under `dist/data/csv_reports_final/`.

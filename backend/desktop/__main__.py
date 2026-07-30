@@ -35,6 +35,11 @@ def _install_crash_logging() -> None:
 def main() -> None:
     _install_crash_logging()
     try:
+        if "--auto-report" in sys.argv[1:]:
+            from app.jobs.daily_report import main as run_daily_job
+
+            sys.exit(run_daily_job())
+
         from desktop.main_window import main as run_app
 
         run_app()

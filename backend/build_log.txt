@@ -1,0 +1,385 @@
+Installing build dependencies...
+Requirement already satisfied: pyinstaller in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (6.20.0)
+Requirement already satisfied: duckdb in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from -r requirements.txt (line 1)) (1.5.3)
+Requirement already satisfied: PySide6 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from -r requirements.txt (line 2)) (6.11.1)
+Requirement already satisfied: openpyxl in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from -r requirements.txt (line 3)) (3.1.5)
+Requirement already satisfied: numpy in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from -r requirements.txt (line 4)) (2.5.0)
+Requirement already satisfied: pywin32 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from -r requirements.txt (line 5)) (312)
+Requirement already satisfied: altgraph in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from pyinstaller) (0.17.5)
+Requirement already satisfied: packaging>=22.0 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from pyinstaller) (26.2)
+Requirement already satisfied: pefile>=2022.5.30 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from pyinstaller) (2024.8.26)
+Requirement already satisfied: pyinstaller-hooks-contrib>=2026.4 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from pyinstaller) (2026.5)
+Requirement already satisfied: pywin32-ctypes>=0.2.1 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from pyinstaller) (0.2.3)
+Requirement already satisfied: setuptools>=42.0.0 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from pyinstaller) (82.0.1)
+Requirement already satisfied: shiboken6==6.11.1 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from PySide6->-r requirements.txt (line 2)) (6.11.1)
+Requirement already satisfied: PySide6_Essentials==6.11.1 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from PySide6->-r requirements.txt (line 2)) (6.11.1)
+Requirement already satisfied: PySide6_Addons==6.11.1 in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from PySide6->-r requirements.txt (line 2)) (6.11.1)
+Requirement already satisfied: et-xmlfile in c:\users\m.zakalata\appdata\local\programs\python\python312\lib\site-packages (from openpyxl->-r requirements.txt (line 3)) (2.0.0)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.1.2
+[notice] To update, run: python.exe -m pip install --upgrade pip
+Building VST.exe...
+392 INFO: PyInstaller: 6.20.0, contrib hooks: 2026.5
+392 INFO: Python: 3.12.10
+482 INFO: Platform: Windows-10-10.0.19045-SP0
+482 INFO: Python environment: C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312
+487 INFO: Removing temporary files and cleaning cache in C:\Users\m.zakalata\AppData\Local\pyinstaller
+9222 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\m.zakalata\\source\\repos\\Parser\\backend',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\python312.zip',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\DLLs',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\win32',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\pythonwin',
+ 'C:\\Users\\m.zakalata\\source\\repos\\Parser\\backend']
+10186 INFO: Appending 'datas' from .spec
+10415 INFO: checking Analysis
+10416 INFO: Building Analysis because Analysis-00.toc is non existent
+10416 INFO: Looking for Python shared library...
+10416 INFO: Using Python shared library: C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\python312.dll
+10416 INFO: Running Analysis Analysis-00.toc
+10416 INFO: Target bytecode optimization level: 0
+10417 INFO: Initializing module dependency graph...
+10419 INFO: Initializing module graph hook caches...
+10458 INFO: Analyzing modules for base_library.zip ...
+13641 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+17241 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+20529 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+21511 INFO: Caching module dependency graph...
+21615 INFO: Analyzing C:\Users\m.zakalata\source\repos\Parser\backend\desktop\__main__.py
+21661 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+22213 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+22557 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+27185 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+32878 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+39188 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+78271 INFO: Processing standard module hook 'hook-duckdb.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+78323 INFO: Processing standard module hook 'hook-openpyxl.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+78765 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+79468 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+79470 INFO: SetuptoolsInfo: initializing cached setuptools info...
+81435 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+81612 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+82132 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+83748 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+83978 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+86193 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+88312 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+90187 INFO: Processing pre-safe-import-module hook 'hook-win32com.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+90450 INFO: Processing standard module hook 'hook-win32com.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+90457 INFO: Processing standard module hook 'hook-pythoncom.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+90724 INFO: Processing standard module hook 'hook-pywintypes.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+92629 INFO: Analyzing hidden import 'uuid'
+92674 INFO: Analyzing hidden import 'duckdb.bytes_io_wrapper'
+92677 INFO: Analyzing hidden import 'duckdb.experimental.spark._globals'
+92677 ERROR: Hidden import 'duckdb.experimental.spark._globals' not found
+92677 INFO: Analyzing hidden import 'duckdb.experimental.spark._typing'
+92677 ERROR: Hidden import 'duckdb.experimental.spark._typing' not found
+92677 INFO: Analyzing hidden import 'duckdb.experimental.spark.conf'
+92677 ERROR: Hidden import 'duckdb.experimental.spark.conf' not found
+92677 INFO: Analyzing hidden import 'duckdb.experimental.spark.context'
+92677 ERROR: Hidden import 'duckdb.experimental.spark.context' not found
+92677 INFO: Analyzing hidden import 'duckdb.experimental.spark.errors'
+92677 ERROR: Hidden import 'duckdb.experimental.spark.errors' not found
+92677 INFO: Analyzing hidden import 'duckdb.experimental.spark.errors.error_classes'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.errors.error_classes' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.errors.exceptions'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.errors.exceptions' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.errors.exceptions.base'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.errors.exceptions.base' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.errors.utils'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.errors.utils' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.exception'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.exception' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.sql' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql._typing'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.sql._typing' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.catalog'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.sql.catalog' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.column'
+92678 ERROR: Hidden import 'duckdb.experimental.spark.sql.column' not found
+92678 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.conf'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.conf' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.dataframe'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.dataframe' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.functions'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.functions' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.group'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.group' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.readwriter'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.readwriter' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.session'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.session' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.streaming'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.streaming' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.type_utils'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.type_utils' not found
+92679 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.types'
+92679 ERROR: Hidden import 'duckdb.experimental.spark.sql.types' not found
+92680 INFO: Analyzing hidden import 'duckdb.experimental.spark.sql.udf'
+92680 ERROR: Hidden import 'duckdb.experimental.spark.sql.udf' not found
+92680 INFO: Analyzing hidden import 'duckdb.func'
+92682 INFO: Analyzing hidden import 'duckdb.query_graph.__main__'
+92682 ERROR: Hidden import 'duckdb.query_graph.__main__' not found
+92682 INFO: Analyzing hidden import 'openpyxl.compat.abc'
+92683 INFO: Analyzing hidden import 'openpyxl.compat.product'
+92685 INFO: Analyzing hidden import 'openpyxl.compat.singleton'
+92690 INFO: Analyzing hidden import 'openpyxl.descriptors.slots'
+92696 INFO: Analyzing hidden import 'openpyxl.packaging.interface'
+92698 INFO: Analyzing hidden import 'openpyxl.utils.dataframe'
+92710 INFO: Analyzing hidden import 'openpyxl.utils.inference'
+92722 INFO: Analyzing hidden import 'openpyxl.worksheet.cell_watch'
+92728 INFO: Analyzing hidden import 'openpyxl.worksheet.controls'
+92754 INFO: Analyzing hidden import 'openpyxl.worksheet.custom'
+92757 INFO: Analyzing hidden import 'openpyxl.worksheet.errors'
+92763 INFO: Analyzing hidden import 'openpyxl.worksheet.picture'
+92765 INFO: Analyzing hidden import 'openpyxl.worksheet.smart_tag'
+92773 INFO: Analyzing hidden import 'numpy._configtool'
+92776 INFO: Analyzing hidden import 'numpy._core._exceptions'
+92790 INFO: Analyzing hidden import 'numpy._core._multiarray_tests'
+92791 INFO: Analyzing hidden import 'numpy._core._operand_flag_tests'
+92791 INFO: Analyzing hidden import 'numpy._core._rational_tests'
+92792 INFO: Analyzing hidden import 'numpy._core._simd'
+92795 INFO: Analyzing hidden import 'numpy._core._struct_ufunc_tests'
+92796 INFO: Analyzing hidden import 'numpy._core._umath_tests'
+92802 INFO: Analyzing hidden import 'numpy._core.cversions'
+92805 INFO: Analyzing hidden import 'numpy._pyinstaller'
+92806 INFO: Analyzing hidden import 'numpy._pyinstaller.hook-numpy'
+92894 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+92894 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+92906 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+92931 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+93016 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+93017 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+93040 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+93041 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+93461 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+94097 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+94100 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+94114 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+94114 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+94956 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+94957 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+96033 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+96034 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+96148 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+96192 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+96192 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+96270 INFO: Processing standard module hook 'hook-win32ctypes.core.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+98422 INFO: Analyzing hidden import 'numpy._pyinstaller.tests'
+98424 INFO: Analyzing hidden import 'numpy._pyinstaller.tests.pyinstaller-smoke'
+98430 INFO: Analyzing hidden import 'numpy._pyinstaller.tests.test_pyinstaller'
+98435 INFO: Analyzing hidden import 'numpy._typing._extended_precision'
+98437 INFO: Analyzing hidden import 'numpy._utils._pep440'
+98455 INFO: Analyzing hidden import 'numpy.conftest'
+98468 INFO: Analyzing hidden import 'numpy.core._dtype'
+98470 INFO: Analyzing hidden import 'numpy.core._dtype_ctypes'
+98471 INFO: Analyzing hidden import 'numpy.core._internal'
+98477 INFO: Analyzing hidden import 'numpy.core._multiarray_umath'
+98481 INFO: Analyzing hidden import 'numpy.core.arrayprint'
+98483 INFO: Analyzing hidden import 'numpy.core.defchararray'
+98485 INFO: Analyzing hidden import 'numpy.core.einsumfunc'
+98487 INFO: Analyzing hidden import 'numpy.core.fromnumeric'
+98489 INFO: Analyzing hidden import 'numpy.core.function_base'
+98491 INFO: Analyzing hidden import 'numpy.core.getlimits'
+98494 INFO: Analyzing hidden import 'numpy.core.multiarray'
+98497 INFO: Analyzing hidden import 'numpy.core.numeric'
+98499 INFO: Analyzing hidden import 'numpy.core.numerictypes'
+98501 INFO: Analyzing hidden import 'numpy.core.overrides'
+98503 INFO: Analyzing hidden import 'numpy.core.records'
+98504 INFO: Analyzing hidden import 'numpy.core.shape_base'
+98506 INFO: Analyzing hidden import 'numpy.core.umath'
+98508 INFO: Analyzing hidden import 'numpy.f2py.__main__'
+98509 INFO: Analyzing hidden import 'numpy.f2py._src_pyf'
+98524 INFO: Analyzing hidden import 'numpy.f2py.tests'
+98528 INFO: Analyzing hidden import 'numpy.f2py.tests.test_abstract_interface'
+98557 INFO: Analyzing hidden import 'numpy.f2py.tests.test_array_from_pyobj'
+98620 INFO: Analyzing hidden import 'numpy.f2py.tests.test_assumed_shape'
+98626 INFO: Analyzing hidden import 'numpy.f2py.tests.test_block_docstring'
+98629 INFO: Analyzing hidden import 'numpy.f2py.tests.test_callback'
+98643 INFO: Analyzing hidden import 'numpy.f2py.tests.test_capi_maps'
+98645 INFO: Analyzing hidden import 'numpy.f2py.tests.test_character'
+98680 INFO: Analyzing hidden import 'numpy.f2py.tests.test_common'
+98684 INFO: Analyzing hidden import 'numpy.f2py.tests.test_crackfortran'
+98716 INFO: Analyzing hidden import 'numpy.f2py.tests.test_data'
+98723 INFO: Analyzing hidden import 'numpy.f2py.tests.test_docs'
+98730 INFO: Analyzing hidden import 'numpy.f2py.tests.test_f2cmap'
+98733 INFO: Analyzing hidden import 'numpy.f2py.tests.test_f2py2e'
+98783 INFO: Analyzing hidden import 'numpy.f2py.tests.test_inplace'
+98788 INFO: Analyzing hidden import 'numpy.f2py.tests.test_isoc'
+98792 INFO: Analyzing hidden import 'numpy.f2py.tests.test_kind'
+98796 INFO: Analyzing hidden import 'numpy.f2py.tests.test_mixed'
+98799 INFO: Analyzing hidden import 'numpy.f2py.tests.test_modules'
+98806 INFO: Analyzing hidden import 'numpy.f2py.tests.test_parameter'
+98818 INFO: Analyzing hidden import 'numpy.f2py.tests.test_pyf_src'
+98821 INFO: Analyzing hidden import 'numpy.f2py.tests.test_quoted_character'
+98823 INFO: Analyzing hidden import 'numpy.f2py.tests.test_regression'
+98841 INFO: Analyzing hidden import 'numpy.f2py.tests.test_return_character'
+98846 INFO: Analyzing hidden import 'numpy.f2py.tests.test_return_complex'
+98853 INFO: Analyzing hidden import 'numpy.f2py.tests.test_return_integer'
+98858 INFO: Analyzing hidden import 'numpy.f2py.tests.test_return_logical'
+98865 INFO: Analyzing hidden import 'numpy.f2py.tests.test_return_real'
+98872 INFO: Analyzing hidden import 'numpy.f2py.tests.test_routines'
+98875 INFO: Analyzing hidden import 'numpy.f2py.tests.test_semicolon_split'
+98879 INFO: Analyzing hidden import 'numpy.f2py.tests.test_size'
+98883 INFO: Analyzing hidden import 'numpy.f2py.tests.test_string'
+98891 INFO: Analyzing hidden import 'numpy.f2py.tests.test_symbolic'
+98935 INFO: Analyzing hidden import 'numpy.f2py.tests.test_value_attrspec'
+98937 INFO: Analyzing hidden import 'numpy.fft.tests'
+98939 INFO: Analyzing hidden import 'numpy.fft.tests.test_helper'
+98951 INFO: Analyzing hidden import 'numpy.fft.tests.test_pocketfft'
+99008 INFO: Analyzing hidden import 'numpy.lib._user_array_impl'
+99029 INFO: Analyzing hidden import 'numpy.lib.tests'
+99031 INFO: Analyzing hidden import 'numpy.lib.tests.test__datasource'
+99052 INFO: Analyzing hidden import 'numpy.lib.tests.test__iotools'
+99098 INFO: Analyzing hidden import 'numpy.lib.tests.test__version'
+99108 INFO: Analyzing hidden import 'numpy.lib.tests.test_array_utils'
+99117 INFO: Analyzing hidden import 'numpy.lib.tests.test_arraypad'
+99228 INFO: Analyzing hidden import 'numpy.lib.tests.test_arraysetops'
+99340 INFO: Analyzing hidden import 'numpy.lib.tests.test_arrayterator'
+99349 INFO: Analyzing hidden import 'numpy.lib.tests.test_format'
+99425 INFO: Analyzing hidden import 'numpy.lib.tests.test_function_base'
+99942 INFO: Analyzing hidden import 'numpy.lib.tests.test_histograms'
+100016 INFO: Analyzing hidden import 'numpy.lib.tests.test_index_tricks'
+100094 INFO: Analyzing hidden import 'numpy.lib.tests.test_io'
+100415 INFO: Analyzing hidden import 'numpy.lib.tests.test_loadtxt'
+100520 INFO: Analyzing hidden import 'numpy.lib.tests.test_mixins'
+100545 INFO: Analyzing hidden import 'numpy.lib.tests.test_nanfunctions'
+100686 INFO: Analyzing hidden import 'numpy.lib.tests.test_packbits'
+100717 INFO: Analyzing hidden import 'numpy.lib.tests.test_polynomial'
+100790 INFO: Analyzing hidden import 'numpy.lib.tests.test_recfunctions'
+100911 INFO: Analyzing hidden import 'numpy.lib.tests.test_regression'
+100929 INFO: Analyzing hidden import 'numpy.lib.tests.test_shape_base'
+101024 INFO: Analyzing hidden import 'numpy.lib.tests.test_stride_tricks'
+101086 INFO: Analyzing hidden import 'numpy.lib.tests.test_twodim_base'
+101134 INFO: Analyzing hidden import 'numpy.lib.tests.test_type_check'
+101177 INFO: Analyzing hidden import 'numpy.lib.tests.test_ufunclike'
+101195 INFO: Analyzing hidden import 'numpy.lib.tests.test_utils'
+101200 INFO: Analyzing hidden import 'numpy.lib.user_array'
+101202 INFO: Analyzing hidden import 'numpy.linalg.lapack_lite'
+101210 INFO: Analyzing hidden import 'numpy.linalg.tests'
+101211 INFO: Analyzing hidden import 'numpy.linalg.tests.test_deprecations'
+101214 INFO: Analyzing hidden import 'numpy.linalg.tests.test_linalg'
+101444 INFO: Analyzing hidden import 'numpy.linalg.tests.test_regression'
+101463 INFO: Analyzing hidden import 'numpy.ma.tests'
+101466 INFO: Analyzing hidden import 'numpy.ma.tests.test_arrayobject'
+101474 INFO: Analyzing hidden import 'numpy.ma.tests.test_core'
+102050 INFO: Analyzing hidden import 'numpy.ma.tests.test_deprecations'
+102057 INFO: Analyzing hidden import 'numpy.ma.tests.test_extras'
+102272 INFO: Analyzing hidden import 'numpy.ma.tests.test_mrecords'
+102317 INFO: Analyzing hidden import 'numpy.ma.tests.test_old_ma'
+102456 INFO: Analyzing hidden import 'numpy.ma.tests.test_regression'
+102475 INFO: Analyzing hidden import 'numpy.ma.tests.test_subclassing'
+102510 INFO: Analyzing hidden import 'numpy.matrixlib.tests'
+102512 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_defmatrix'
+102572 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_interaction'
+102615 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_masked_matrix'
+102638 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_matrix_linalg'
+102645 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_multiarray'
+102648 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_numeric'
+102651 INFO: Analyzing hidden import 'numpy.matrixlib.tests.test_regression'
+102655 INFO: Analyzing hidden import 'numpy.polynomial.tests'
+102656 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_chebyshev'
+102710 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_classes'
+102773 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_hermite'
+102841 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_hermite_e'
+102894 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_laguerre'
+102955 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_legendre'
+103017 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_polynomial'
+103116 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_polyutils'
+103126 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_printing'
+103174 INFO: Analyzing hidden import 'numpy.polynomial.tests.test_symbol'
+103187 INFO: Analyzing hidden import 'numpy.random.tests'
+103188 INFO: Analyzing hidden import 'numpy.random.tests.data'
+103190 INFO: Analyzing hidden import 'numpy.random.tests.test_direct'
+103251 INFO: Analyzing hidden import 'numpy.random.tests.test_extending'
+103313 INFO: Analyzing hidden import 'numpy.random.tests.test_generator_mt19937'
+103598 INFO: Analyzing hidden import 'numpy.random.tests.test_generator_mt19937_regressions'
+103614 INFO: Analyzing hidden import 'numpy.random.tests.test_random'
+103744 INFO: Analyzing hidden import 'numpy.random.tests.test_randomstate'
+103936 INFO: Analyzing hidden import 'numpy.random.tests.test_randomstate_regression'
+103954 INFO: Analyzing hidden import 'numpy.random.tests.test_regression'
+103968 INFO: Analyzing hidden import 'numpy.random.tests.test_seed_sequence'
+103975 INFO: Analyzing hidden import 'numpy.random.tests.test_smoke'
+104050 INFO: Analyzing hidden import 'numpy.testing.print_coercion_tables'
+104062 INFO: Analyzing hidden import 'numpy.testing.tests'
+104063 INFO: Analyzing hidden import 'numpy.testing.tests.test_utils'
+104222 INFO: Analyzing hidden import 'numpy.tests'
+104223 INFO: Analyzing hidden import 'numpy.tests.test__all__'
+104226 INFO: Analyzing hidden import 'numpy.tests.test_configtool'
+104236 INFO: Analyzing hidden import 'numpy.tests.test_ctypeslib'
+104264 INFO: Analyzing hidden import 'numpy.tests.test_lazyloading'
+104269 INFO: Analyzing hidden import 'numpy.tests.test_matlib'
+104278 INFO: Analyzing hidden import 'numpy.tests.test_numpy_config'
+104427 INFO: Analyzing hidden import 'numpy.tests.test_numpy_version'
+104431 INFO: Analyzing hidden import 'numpy.tests.test_public_api'
+104454 INFO: Analyzing hidden import 'numpy.tests.test_reloading'
+104461 INFO: Analyzing hidden import 'numpy.tests.test_scripts'
+104466 INFO: Analyzing hidden import 'numpy.tests.test_warnings'
+104473 INFO: Analyzing hidden import 'numpy.typing.mypy_plugin'
+104491 INFO: Analyzing hidden import 'numpy.typing.tests'
+104492 INFO: Analyzing hidden import 'numpy.typing.tests.test_isfile'
+104497 INFO: Analyzing hidden import 'numpy.typing.tests.test_runtime'
+104506 INFO: Analyzing hidden import 'numpy.typing.tests.test_typing'
+104779 INFO: Processing standard module hook 'hook-pygments.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+108198 INFO: Processing standard module hook 'hook-py.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+109365 INFO: Processing standard module hook 'hook-pytest.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+110844 INFO: Processing module hooks (post-graph stage)...
+115860 INFO: Performing binary vs. data reclassification (1308 entries)
+116555 INFO: Looking for ctypes DLLs
+116862 INFO: Analyzing run-time hooks ...
+116862 INFO: Including custom run-time hook 'C:\\Users\\m.zakalata\\source\\repos\\Parser\\backend\\desktop\\pyi_rth_preload.py'
+116876 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+116881 INFO: Including run-time hook 'pyi_rth_pywintypes.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+116883 INFO: Including run-time hook 'pyi_rth_pythoncom.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+116885 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+116890 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+116895 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+116898 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+116901 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+116905 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+116995 INFO: Creating base_library.zip...
+117054 INFO: Looking for dynamic libraries
+119993 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\shiboken6', 'C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\numpy.libs']
+119993 INFO: Extra DLL search directories (PATH): ['C:\\Users\\m.zakalata\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PySide6']
+123864 INFO: Warnings written to C:\Users\m.zakalata\source\repos\Parser\backend\build\vst\warn-vst.txt
+124187 INFO: Graph cross-reference written to C:\Users\m.zakalata\source\repos\Parser\backend\build\vst\xref-vst.html
+124413 INFO: checking PYZ
+124414 INFO: Building PYZ because PYZ-00.toc is non existent
+124414 INFO: Building PYZ (ZlibArchive) C:\Users\m.zakalata\source\repos\Parser\backend\build\vst\PYZ-00.pyz
+126424 INFO: Building PYZ (ZlibArchive) C:\Users\m.zakalata\source\repos\Parser\backend\build\vst\PYZ-00.pyz completed successfully.
+126533 INFO: checking PKG
+126533 INFO: Building PKG because PKG-00.toc is non existent
+126533 INFO: Building PKG (CArchive) VST.pkg
+169517 INFO: Building PKG (CArchive) VST.pkg completed successfully.
+169572 INFO: Bootloader C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+169572 INFO: checking EXE
+169572 INFO: Building EXE because EXE-00.toc is non existent
+169572 INFO: Building EXE from EXE-00.toc
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\__main__.py", line 321, in <module>
+    run()
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\__main__.py", line 215, in run
+    run_build(pyi_config, spec_file, **vars(args))
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\__main__.py", line 70, in run_build
+    PyInstaller.building.build_main.main(pyi_config, spec_file, **kwargs)
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\build_main.py", line 1275, in main
+    build(specfile, distpath, workpath, clean_build)
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\build_main.py", line 1213, in build
+    exec(code, spec_namespace)
+  File "vst.spec", line 99, in <module>
+    exe = EXE(
+          ^^^^
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\api.py", line 675, in __init__
+    self.__postinit__()
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\datastruct.py", line 184, in __postinit__
+    self.assemble()
+  File "C:\Users\m.zakalata\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\api.py", line 769, in assemble
+    os.remove(self.name)
+PermissionError: [WinError 5] Access is denied: 'C:\\Users\\m.zakalata\\source\\repos\\Parser\\backend\\dist\\VST.exe'

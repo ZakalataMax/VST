@@ -182,13 +182,13 @@ SELECT
         ELSE 'NO'
     END AS r02,
     substr(areq.messagedatetime, 9, 2) || '.' || substr(areq.messagedatetime, 6, 2) || '.' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
+    COALESCE(areq.browseros, '') AS browser_os,
+    COALESCE(areq.browsermodel, '') AS browser_model,
     COALESCE(oob_missing_day.oob_missing_day, 0) AS oob_missing_day,
     'CRES: ' || COALESCE(cres.transstatus, 'NULL')
         || '+' || COALESCE(cres.transstatusreason, 'NULL') AS final_cres_status,
     timeline.txn_timeline,
     areq.browseruseragent AS browser_user_agent,
-    COALESCE(areq.browseros, '') AS browser_os,
-    COALESCE(areq.browsermodel, '') AS browser_model,
     areq.merchantname AS merchant_name,
     'URL: ' || COALESCE(areq.threedsrequestorurl, 'NULL')
         || ' | Server: ' || COALESCE(areq.threedsserverurl, 'NULL')

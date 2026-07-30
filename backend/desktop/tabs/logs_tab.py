@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -40,6 +40,14 @@ from desktop.workers import (
 )
 
 CHUNK_SIZE = 100
+
+
+def _format_range_for_email(date_from: str, date_to: str) -> str:
+    def fmt(value: str) -> str:
+        parsed = datetime.strptime(value.split(".", 1)[0], "%Y-%m-%d %H:%M:%S")
+        return parsed.strftime("%d.%m.%Y %H:%M:%S")
+
+    return f"{fmt(date_from)} - {fmt(date_to)}"
 
 
 class LogsTab(QWidget):
@@ -541,8 +549,31 @@ class LogsTab(QWidget):
         except ValueError as error:
             QMessageBox.warning(self, "Report", str(error))
             return
+        email_recipients = None
+        email_body = None
+        if self.report_panel.email_enabled():
+            date_range_text = _format_range_for_email(kwargs["date_from"], kwargs["date_to"])
+            composed = self.report_panel.compose_email(
+                default_body=f"ACS Approval Rate report\n\n{date_range_text}\n\nReport attached.",
+                date_range_text=date_range_text,
+            )
+            if composed is None:
+                return
+            email_recipients, email_body = composed
+            if not email_recipients:
+                QMessageBox.warning(
+                    self,
+                    "Report",
+                    "Enter at least one recipient email, or uncheck Email report.",
+                )
+                return
         self._start_worker(
-            ReportExportWorker(**kwargs, native_pivot=False),
+            ReportExportWorker(
+                **kwargs,
+                native_pivot=self.report_panel.native_pivot_enabled(),
+                email_recipients=email_recipients,
+                email_body=email_body,
+            ),
             indeterminate=True,
             on_ok=self._on_export_done,
             status="Export: building report…",
@@ -562,11 +593,13 @@ class LogsTab(QWidget):
             )
         else:
             pivot_note = ""
+        email_status = getattr(result, "email_status", "")
+        email_note = f"\n\nEmail: {email_status}" if email_status else ""
         QMessageBox.information(
             self,
             "Export complete",
             f"Saved {result.row_count:,} rows to Excel:\n{path}\n\n"
-            f"Folder:\n{get_report_output_dir()}{pivot_note}",
+            f"Folder:\n{get_report_output_dir()}{pivot_note}{email_note}",
         )
 
     def _start_worker(

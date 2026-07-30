@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QFont
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.report_mailer import recipients_from_env
 from app.services.report import format_report_cell_value, format_report_datetime_field
 from desktop.report_sql_utils import build_report_sql_from_filters
 from desktop.report_table_utils import default_column_width, should_elide
@@ -142,6 +144,60 @@ class CustomSqlDialog(QDialog):
         super().closeEvent(event)
 
 
+class EmailComposeDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Email report")
+        self.resize(560, 440)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(10)
+
+        header = QLabel("Email report")
+        header.setObjectName("CardTitle")
+        layout.addWidget(header)
+
+        self.range_label = QLabel("")
+        self.range_label.setObjectName("MutedLabel")
+        layout.addWidget(self.range_label)
+
+        to_row = QHBoxLayout()
+        to_row.setSpacing(8)
+        to_row.addWidget(QLabel("To:"))
+        self.recipients_field = QLineEdit()
+        self.recipients_field.setPlaceholderText("name@company.com, ...")
+        to_row.addWidget(self.recipients_field, stretch=1)
+        layout.addLayout(to_row)
+
+        self.body_edit = QPlainTextEdit()
+        self.body_edit.setMinimumHeight(240)
+        layout.addWidget(self.body_edit, stretch=1)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Send")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def set_date_range_text(self, text: str) -> None:
+        self.range_label.setText(f"Range: {text}")
+
+    def set_recipients(self, text: str) -> None:
+        self.recipients_field.setText(text)
+
+    def recipients(self) -> list[str]:
+        return [part.strip() for part in re.split(r"[,;]", self.recipients_field.text()) if part.strip()]
+
+    def set_body(self, text: str) -> None:
+        self.body_edit.setPlainText(text)
+
+    def body(self) -> str:
+        return self.body_edit.toPlainText()
+
+
 class ReportPanel(QWidget):
     run_requested = Signal()
     export_requested = Signal()
@@ -158,6 +214,8 @@ class ReportPanel(QWidget):
         self._syncing_filters = False
         self._custom_sql_dialog: CustomSqlDialog | None = None
         self._has_results = False
+        self._last_email_recipients = ""
+        self._last_email_body = ""
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -324,6 +382,21 @@ class ReportPanel(QWidget):
         footer_layout.addWidget(self.report_status)
         footer_layout.addStretch()
 
+        self.native_pivot_check = QCheckBox("Native pivot")
+        self.native_pivot_check.setChecked(True)
+        self.native_pivot_check.setToolTip(
+            "Build a live Excel PivotTable on export via Excel automation (requires Excel "
+            "to be installed)."
+        )
+        footer_layout.addWidget(self.native_pivot_check)
+
+        self.email_check = QCheckBox("Email report")
+        self.email_check.setChecked(True)
+        self.email_check.setToolTip(
+            "Compose and email the exported file on export via the local Outlook app."
+        )
+        footer_layout.addWidget(self.email_check)
+
         self.export_btn = secondary_button("Export")
         self.export_btn.setObjectName("CompactSecondaryButton")
         self.export_btn.setFixedHeight(28)
@@ -350,6 +423,25 @@ class ReportPanel(QWidget):
 
     def uses_txn_filter(self) -> bool:
         return self.use_txn_id_check.isChecked() and bool(self.txn_id.text().strip())
+
+    def native_pivot_enabled(self) -> bool:
+        return self.native_pivot_check.isChecked()
+
+    def email_enabled(self) -> bool:
+        return self.email_check.isChecked()
+
+    def compose_email(self, *, default_body: str, date_range_text: str) -> tuple[list[str], str] | None:
+        dialog = EmailComposeDialog(parent=self.window())
+        dialog.set_date_range_text(date_range_text)
+        dialog.set_recipients(self._last_email_recipients or ", ".join(recipients_from_env()))
+        dialog.set_body(self._last_email_body or default_body)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        recipients = dialog.recipients()
+        body = dialog.body()
+        self._last_email_recipients = ", ".join(recipients)
+        self._last_email_body = body
+        return recipients, body
 
     def custom_sql(self) -> str:
         return self._custom_sql_text.strip()

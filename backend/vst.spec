@@ -9,6 +9,7 @@ block_cipher = None
 
 duckdb_datas, duckdb_binaries, duckdb_hidden = collect_all("duckdb")
 openpyxl_datas, openpyxl_binaries, openpyxl_hidden = collect_all("openpyxl")
+numpy_datas, numpy_binaries, numpy_hidden = collect_all("numpy")
 
 stdlib_hiddenimports = [
     "uuid",
@@ -58,20 +59,24 @@ hiddenimports = [
     "app.services.elastic_logs",
     "app.services.report",
     "app.services.excel_pivot",
+    "app.services.outlook_sender",
+    "app.services.report_mailer",
+    "app.jobs.daily_report",
     "app.paths",
     "app.config",
-] + stdlib_hiddenimports + duckdb_hidden + openpyxl_hidden + win32_hiddenimports
+] + stdlib_hiddenimports + duckdb_hidden + openpyxl_hidden + numpy_hidden + win32_hiddenimports
 
 a = Analysis(
     [str(backend_dir / "desktop" / "__main__.py")],
     pathex=[str(backend_dir)],
-    binaries=duckdb_binaries + openpyxl_binaries,
+    binaries=duckdb_binaries + openpyxl_binaries + numpy_binaries,
     datas=[
         (str(backend_dir / "db" / "report_query.sql"), "db"),
         (str(backend_dir / "app" / "data" / "android_model_aliases.json"), "app/data"),
     ]
     + duckdb_datas
-    + openpyxl_datas,
+    + openpyxl_datas
+    + numpy_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

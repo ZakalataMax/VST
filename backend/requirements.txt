@@ -1,4 +1,5 @@
 duckdb
 PySide6
 openpyxl
+numpy
 pywin32; sys_platform == "win32"
