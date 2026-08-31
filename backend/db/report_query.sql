@@ -168,19 +168,37 @@ oob_missing_day AS (
     LEFT JOIN oob_init o ON a.threedsservertransid = o.threedsservertransid
     GROUP BY substr(a.messagedatetime, 1, 10)
 ),
-ares_r02 AS (
+success_ares AS (
     SELECT DISTINCT ds.threedsservertransid
     FROM cust_acs_3dsmess ds
     INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
     WHERE ds.messagetype = 'ARes'
-      AND COALESCE(ds.transstatus, '') = 'R'
-      AND COALESCE(ds.transstatusreason, '') = '02'
+      AND (
+        COALESCE(ds.transstatus, '') IN ('Y', 'I')
+        OR (COALESCE(ds.transstatus, '') = 'R' AND COALESCE(ds.transstatusreason, '') = '02')
+      )
+),
+success_rreq AS (
+    SELECT DISTINCT ds.threedsservertransid
+    FROM cust_acs_3dsmess ds
+    INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
+    WHERE ds.messagetype = 'RReq'
+      AND (
+        COALESCE(ds.transstatus, '') = 'Y'
+        OR (
+          COALESCE(ds.transstatus, '') = 'N'
+          AND COALESCE(ds.challengecancel, '') IN ('02', '05')
+        )
+      )
 )
 SELECT
     CASE
-        WHEN ares_r02.threedsservertransid IS NOT NULL THEN 'YES'
+        WHEN success_ares.threedsservertransid IS NOT NULL
+          OR success_rreq.threedsservertransid IS NOT NULL
+        THEN 'YES'
         ELSE 'NO'
-    END AS r02,
+    END AS general_success,
+    vst_st_louis_date(areq.messagedatetime) AS areq_messagedate_stlouis,
     substr(areq.messagedatetime, 9, 2) || '.' || substr(areq.messagedatetime, 6, 2) || '.' || substr(areq.messagedatetime, 1, 4) AS areq_messagedate,
     COALESCE(areq.browseros, '') AS browser_os,
     COALESCE(areq.browsermodel, '') AS browser_model,
@@ -227,5 +245,6 @@ LEFT JOIN erro ON areq.threedsservertransid = erro.threedsservertransid
 LEFT JOIN acs_id ON areq.threedsservertransid = acs_id.threedsservertransid
 LEFT JOIN oob_init ON areq.threedsservertransid = oob_init.threedsservertransid
 LEFT JOIN oob_missing_day ON substr(areq.messagedatetime, 1, 10) = oob_missing_day.day
-LEFT JOIN ares_r02 ON areq.threedsservertransid = ares_r02.threedsservertransid
+LEFT JOIN success_ares ON areq.threedsservertransid = success_ares.threedsservertransid
+LEFT JOIN success_rreq ON areq.threedsservertransid = success_rreq.threedsservertransid
 ORDER BY areq.messagedatetime

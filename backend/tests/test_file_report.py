@@ -41,12 +41,23 @@ def _cres(txn: str, when: str, *, status: str = "Y") -> MessageRow:
     )
 
 
+def _rreq(txn: str, when: str, *, status: str = "Y", challenge_cancel: str = "") -> MessageRow:
+    return MessageRow(
+        log_file="elastic.log",
+        message_datetime=when,
+        message_type="RReq",
+        three_ds_server_trans_id=txn,
+        trans_status=status,
+        challenge_cancel=challenge_cancel,
+    )
+
+
 class FileReportTest(unittest.TestCase):
     def test_pivot_row_fields_order(self) -> None:
         self.assertEqual(
             file_report.PIVOT_ROW_FIELDS,
             [
-                "r02",
+                "general_success",
                 "areq_messagedate",
                 "browser_os",
                 "browser_model",
@@ -65,7 +76,7 @@ class FileReportTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._saved = {
             key: os.environ.get(key)
-            for key in ("CSV_STORAGE_DIR", "REPORT_OUTPUT_DIR")
+            for key in ("CSV_STORAGE_DIR", "REPORT_OUTPUT_DIR", "ELASTIC_TIME_ZONE")
         }
         os.environ["CSV_STORAGE_DIR"] = str(Path(self._tmp.name) / "csv")
         os.environ["REPORT_OUTPUT_DIR"] = str(Path(self._tmp.name) / "reports")
@@ -153,16 +164,90 @@ class FileReportTest(unittest.TestCase):
             date_to="2026-06-20 23:59:59",
         )
         self.assertIn("ARes(R+02)", result.rows[0]["txn_timeline"])
-        self.assertEqual(result.rows[0]["r02"], "YES")
+        self.assertEqual(result.rows[0]["general_success"], "YES")
 
-    def test_r02_is_no_without_ares_r02(self) -> None:
+    def test_general_success_is_no_without_matching_conditions(self) -> None:
         self._seed_day("2026-06-20", "T1")
         result = file_report.run_report_query(
             mode="date",
             date_from="2026-06-20 00:00:00",
             date_to="2026-06-20 23:59:59",
         )
-        self.assertEqual(result.rows[0]["r02"], "NO")
+        self.assertEqual(result.rows[0]["general_success"], "NO")
+
+    def test_general_success_yes_for_ares_i(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000", status="I"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.rows[0]["general_success"], "YES")
+
+    def test_general_success_yes_for_rreq_y(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000", status="C"),
+                _rreq("T1", "2026-06-20 10:01:00.000", status="Y"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.rows[0]["general_success"], "YES")
+
+    def test_general_success_yes_for_rreq_n_with_challenge_cancel_02_or_05(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000", status="C"),
+                _rreq("T1", "2026-06-20 10:01:00.000", status="N", challenge_cancel="02"),
+                _areq("T2", "2026-06-20 11:00:00.000"),
+                _ares("T2", "2026-06-20 11:00:01.000", status="C"),
+                _rreq("T2", "2026-06-20 11:01:00.000", status="N", challenge_cancel="05"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        by_txn = {row["threedsservertransid"]: row for row in result.rows}
+        self.assertEqual(by_txn["T1"]["general_success"], "YES")
+        self.assertEqual(by_txn["T2"]["general_success"], "YES")
+
+    def test_general_success_no_for_rreq_n_with_other_challenge_cancel(self) -> None:
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _ares("T1", "2026-06-20 10:00:01.000", status="C"),
+                _rreq("T1", "2026-06-20 10:01:00.000", status="N", challenge_cancel="01"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.rows[0]["general_success"], "NO")
+
+    def test_st_louis_date_field_is_date_only_and_can_roll_back_a_day(self) -> None:
+        os.environ["ELASTIC_TIME_ZONE"] = "Europe/Athens"
+        save_daily_csvs([_areq("T1", "2026-06-20 03:00:00.000")])
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        self.assertEqual(result.rows[0]["areq_messagedate_stlouis"], "2026-06-19")
 
     def test_multi_day_report_counts_all(self) -> None:
         self._seed_day("2026-06-20", "T1")

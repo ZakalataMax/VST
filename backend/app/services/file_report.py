@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import csv
+import os
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import duckdb
 from openpyxl import Workbook
@@ -13,6 +15,7 @@ from app.parsers.csv_writer import CSV_DELIMITER, duckdb_read_csv_delim
 from app.paths import get_report_output_dir, load_report_query_sql
 from app.services.csv_storage import CSV_TO_DB, list_all_csv_paths, resolve_csv_paths_for_dates
 from app.services.device_detection import parse_browser_device
+from app.services.elastic_logs import DEFAULT_TIME_ZONE
 from app.services.card_champions import append_champion_sheets, is_single_day_date_report
 from app.services.report import (
     DEFAULT_LIMIT,
@@ -93,6 +96,40 @@ def _register_browser_device_functions(connection: duckdb.DuckDBPyConnection) ->
 
     connection.create_function("vst_browser_os", browser_os_from_ua)
     connection.create_function("vst_browser_model", browser_model_from_ua)
+
+
+ST_LOUIS_TIME_ZONE = ZoneInfo("America/Chicago")
+_MESSAGE_DATETIME_FORMATS = ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S")
+
+
+def _source_log_time_zone() -> ZoneInfo:
+    name = os.getenv("ELASTIC_TIME_ZONE", "").strip() or DEFAULT_TIME_ZONE
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo(DEFAULT_TIME_ZONE)
+
+
+def _to_st_louis_date(message_datetime: str | None) -> str:
+    text = (message_datetime or "").strip()
+    if not text:
+        return ""
+    parsed = None
+    for fmt in _MESSAGE_DATETIME_FORMATS:
+        try:
+            parsed = datetime.strptime(text, fmt)
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        return ""
+    localized = parsed.replace(tzinfo=_source_log_time_zone())
+    converted = localized.astimezone(ST_LOUIS_TIME_ZONE)
+    return converted.strftime("%Y-%m-%d")
+
+
+def _register_time_zone_functions(connection: duckdb.DuckDBPyConnection) -> None:
+    connection.create_function("vst_st_louis_date", _to_st_louis_date)
 
 
 def _duckdb_column_expr(csv_col: str, db_col: str, available: set[str]) -> str:
@@ -234,7 +271,7 @@ PIVOT_ROW_FIELD = "txn_result"
 PIVOT_VALUE_FIELD = "threedsservertransid"
 SUMMARY_APPEND_MAX_ROWS = 25_000
 PIVOT_ROW_FIELDS = [
-    "r02",
+    "general_success",
     "areq_messagedate",
     "browser_os",
     "browser_model",
@@ -484,6 +521,7 @@ def _load_report_result(
     if reload_messages:
         connection.execute(_duckdb_messages_table_sql(csv_paths))
         _enrich_browser_device_columns(connection)
+        _register_time_zone_functions(connection)
     connection.execute("DROP TABLE IF EXISTS report_result")
     connection.execute(f"CREATE TEMP TABLE report_result AS {report_sql}", params)
     return [
