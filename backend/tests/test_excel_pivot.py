@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.excel_pivot import _column_letter, native_pivot_available
+from app.common.excel_pivot import _column_letter, native_pivot_available
 
 
 class ExcelPivotHelpersTest(unittest.TestCase):

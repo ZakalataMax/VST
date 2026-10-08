@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from app.config import env_file_path, load_env_file
+from app.common.config import env_file_path, load_env_file
 
 load_env_file()
 
@@ -36,7 +36,7 @@ def main() -> None:
     _install_crash_logging()
     try:
         if "--auto-report" in sys.argv[1:]:
-            from app.jobs.daily_report import main as run_daily_job
+            from app.acs.jobs.daily_report import main as run_daily_job
 
             sys.exit(run_daily_job())
 

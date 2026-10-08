@@ -1,0 +1,267 @@
+from __future__ import annotations
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from desktop.tools.threeds.coverage import STATUS_FAILED, STATUS_PARSING, STATUS_PARTIAL
+
+ROLE_DATE = Qt.ItemDataRole.UserRole
+ROLE_STATUS = Qt.ItemDataRole.UserRole + 1
+PANEL_WIDTH = 240
+
+STRIPE_COLORS = {
+    STATUS_FAILED: "#f44336",
+    STATUS_PARTIAL: "#ff9800",
+    STATUS_PARSING: "#7c9cff",
+}
+
+STATUS_COLORS = {
+    STATUS_FAILED: "#f44336",
+    STATUS_PARTIAL: "#ff9800",
+    STATUS_PARSING: "#7c9cff",
+}
+
+TABLE_HEADERS = [
+    ("", "Day status icon"),
+    ("Date", "Log date"),
+    ("Rows", "Downloaded row count"),
+    ("Parsed", "Parsed row count"),
+]
+
+
+def _day_sort_key(day: dict, column: int):
+    if column in (0,):
+        return day.get("status_sort", 99)
+    if column == 1:
+        return day.get("date", "")
+    if column == 2:
+        return int(day.get("rowCount") or 0)
+    if column == 3:
+        csv_day = day.get("csv_day")
+        return int(csv_day.get("rowCount") or 0) if csv_day else -1
+    return ""
+
+
+class ThreeDsCoverageSidebar(QWidget):
+    days_selected = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("CoveragePanel")
+        self._days: list[dict] = []
+        self._selected_dates: list[str] = []
+        self._expanded = True
+        self._syncing = False
+        self._sort_column: int | None = None
+        self._sort_ascending = True
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("CoverageHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 8, 6, 8)
+
+        self.title = QLabel("Downloaded days")
+        self.title.setObjectName("CoverageTitle")
+        header_layout.addWidget(self.title)
+        header_layout.addStretch()
+        self.toggle_btn = QToolButton()
+        self.toggle_btn.setText("‹")
+        self.toggle_btn.setToolTip("Collapse panel")
+        self.toggle_btn.clicked.connect(self._toggle)
+        header_layout.addWidget(self.toggle_btn)
+        root.addWidget(header)
+
+        self.table = QTableWidget(0, len(TABLE_HEADERS))
+        self.table.setObjectName("CoverageTable")
+        self._refresh_header_labels()
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(24)
+        self.table.setShowGrid(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.table.setAlternatingRowColors(False)
+        self.table.setFrameShape(QTableWidget.Shape.NoFrame)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table.setSortingEnabled(False)
+
+        header_view = self.table.horizontalHeader()
+        header_view.setStretchLastSection(False)
+        header_view.setSectionsClickable(True)
+        header_view.setFixedHeight(22)
+        header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header_view.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header_view.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header_view.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header_view.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header_view.sectionClicked.connect(self._on_header_clicked)
+        self.table.setColumnWidth(0, 18)
+        self.table.setColumnWidth(2, 54)
+        self.table.setColumnWidth(3, 54)
+
+        table_font = QFont("Segoe UI", 9)
+        self.table.setFont(table_font)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        root.addWidget(self.table, stretch=1)
+
+        self._apply_panel_width(expanded=True)
+
+    def _refresh_header_labels(self) -> None:
+        for column, (label, tooltip) in enumerate(TABLE_HEADERS):
+            text = label
+            if self._sort_column is not None and column == self._sort_column:
+                text = f"{label} {'↑' if self._sort_ascending else '↓'}"
+            header_item = QTableWidgetItem(text)
+            header_item.setToolTip(tooltip)
+            self.table.setHorizontalHeaderItem(column, header_item)
+
+    def set_days(self, days: list[dict]) -> None:
+        self._days = list(days)
+        if self._sort_column is None:
+            self._populate_table(self._days)
+        else:
+            self._apply_sort()
+
+    def set_selected_dates(self, dates: list[str]) -> None:
+        self._selected_dates = list(dates)
+        self._syncing = True
+        self.table.clearSelection()
+        if dates:
+            date_set = set(dates)
+            first_row = None
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)
+                if not item:
+                    continue
+                day_date = item.data(ROLE_DATE)
+                if day_date in date_set:
+                    for column in range(self.table.columnCount()):
+                        cell = self.table.item(row, column)
+                        if cell:
+                            cell.setSelected(True)
+                    if first_row is None:
+                        first_row = row
+            if first_row is not None:
+                anchor = self.table.item(first_row, 0)
+                if anchor:
+                    self.table.scrollToItem(anchor)
+        self._syncing = False
+
+    def selected_dates(self) -> list[str]:
+        rows = sorted({index.row() for index in self.table.selectedIndexes()})
+        dates: list[str] = []
+        for row in rows:
+            item = self.table.item(row, 0)
+            if not item:
+                continue
+            day_date = item.data(ROLE_DATE)
+            if isinstance(day_date, str):
+                dates.append(day_date)
+        return dates
+
+    def _on_header_clicked(self, column: int) -> None:
+        if self._sort_column == column:
+            self._sort_ascending = not self._sort_ascending
+        else:
+            self._sort_column = column
+            self._sort_ascending = True
+        self._refresh_header_labels()
+        self._apply_sort()
+
+    def _apply_sort(self) -> None:
+        sort_column = self._sort_column
+        if sort_column is None:
+            self._populate_table(self._days)
+            return
+        reverse = not self._sort_ascending
+        sorted_days = sorted(
+            self._days,
+            key=lambda day: _day_sort_key(day, sort_column),
+            reverse=reverse,
+        )
+        self._populate_table(sorted_days)
+
+    def _populate_table(self, days: list[dict]) -> None:
+        self.table.setRowCount(len(days))
+        for row_index, day in enumerate(days):
+            status = day.get("status", "")
+
+            icon_item = QTableWidgetItem(day.get("status_icon", ""))
+            icon_item.setData(ROLE_DATE, day["date"])
+            icon_item.setData(ROLE_STATUS, status)
+            icon_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_item.setToolTip(day.get("status_text", ""))
+            if status in STRIPE_COLORS:
+                icon_item.setForeground(QBrush(QColor(STRIPE_COLORS[status])))
+
+            date_item = QTableWidgetItem(day["date"])
+            date_item.setData(ROLE_DATE, day["date"])
+            date_item.setData(ROLE_STATUS, status)
+
+            rows_item = QTableWidgetItem(day.get("row_count_text", "—"))
+            rows_item.setData(ROLE_STATUS, status)
+            rows_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            status_color = STATUS_COLORS.get(status)
+            if status_color:
+                rows_item.setForeground(QBrush(QColor(status_color)))
+
+            parsed_item = QTableWidgetItem(day.get("parsed_row_count_text", "—"))
+            parsed_item.setData(ROLE_STATUS, status)
+            parsed_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+            for item in (icon_item, date_item, rows_item, parsed_item):
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+
+            self.table.setItem(row_index, 0, icon_item)
+            self.table.setItem(row_index, 1, date_item)
+            self.table.setItem(row_index, 2, rows_item)
+            self.table.setItem(row_index, 3, parsed_item)
+
+        if self._selected_dates:
+            self.set_selected_dates(self._selected_dates)
+
+    def _on_selection_changed(self) -> None:
+        if self._syncing:
+            return
+        dates = self.selected_dates()
+        self._selected_dates = dates
+        self.days_selected.emit(dates)
+
+    def _apply_panel_width(self, *, expanded: bool) -> None:
+        if expanded:
+            self.setMinimumWidth(PANEL_WIDTH)
+            self.setMaximumWidth(PANEL_WIDTH)
+        else:
+            self.setMinimumWidth(52)
+            self.setMaximumWidth(52)
+
+    def _toggle(self) -> None:
+        self._expanded = not self._expanded
+        if self._expanded:
+            self._apply_panel_width(expanded=True)
+            self.title.setVisible(True)
+            self.table.setVisible(True)
+            self.toggle_btn.setText("‹")
+            self.toggle_btn.setToolTip("Collapse panel")
+        else:
+            self._apply_panel_width(expanded=False)
+            self.title.setVisible(False)
+            self.table.setVisible(False)
+            self.toggle_btn.setText("›")
+            self.toggle_btn.setToolTip("Show coverage panel")

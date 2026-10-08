@@ -8,8 +8,9 @@ daily report. For how the app is built internally, see `CLAUDE.md` instead.
 - Windows (the app is packaged as a Windows exe; Outlook/Excel automation is
   Windows-only).
 - The app itself: either the built `VST.exe`, or Python 3.11+ to run it from source.
-- A `.env` file with `ELASTIC_PASS` set — the password for downloading ACS logs from
-  Elastic. Ask whoever manages Elastic access for this credential.
+- A `.env` file with `ELASTIC_PASS` set — the password for downloading logs from
+  Elastic (shared by both the ACS Log Parser and 3DS Log Parser tools). Ask whoever
+  manages Elastic access for this credential.
 - *Optional* — Microsoft Excel installed: enables the native `Pivot` sheet in exported
   reports (skipped automatically if Excel isn't there).
 - *Optional* — Microsoft Outlook installed and signed in: required to email reports,
@@ -27,9 +28,10 @@ daily report. For how the app is built internally, see `CLAUDE.md` instead.
    (recipients, storage paths, thresholds, etc.).
 3. Double-click `VST.exe`, or create a desktop shortcut to it.
 
-A `data/` folder is created next to the exe on first run: `data/logs`, `data/csv`,
-`data/csv_reports_final`. This is where downloaded logs, parsed CSVs, and exported
-reports live.
+A `data/` folder is created next to the exe on first use: `data/logs`, `data/csv`,
+`data/csv_reports_final` for the ACS Log Parser tool, and `data/logs_3ds`,
+`data/csv_3ds`, `data/csv_reports_final_3ds` for the 3DS Log Parser tool. This is where
+downloaded logs, parsed CSVs, and exported reports live.
 
 ### 2b. Building `VST.exe` from source
 
@@ -60,9 +62,12 @@ Same behavior as `VST.exe`, using `backend/data/` instead of `backend/dist/data/
 
 ## 3. Using the app
 
-The app opens on the **Logs** tab.
+The app has three tools, opened via tabs at the top: **ACS Log Parser**, **3DS Log
+Parser**, and **Parser**. It opens on the **ACS Log Parser** tab.
 
-### Import & Parse
+### ACS Log Parser
+
+#### Import & Parse
 
 1. Pick a **From**/**To** date range.
 2. Click **Import**. Each day downloads from Elastic and is parsed into a CSV
@@ -74,7 +79,7 @@ The app opens on the **Logs** tab.
    row cap at the smallest time window), it's reported instead of silently saving
    partial data — re-run Import for that day once the underlying issue is fixed.
 
-### Report
+#### Report
 
 1. Select the day(s) you want in the sidebar — this fills the report **From**/**To**
    range (or type a range in directly).
@@ -89,22 +94,52 @@ The app opens on the **Logs** tab.
 4. A report range that has any day without a parsed CSV is blocked and lists which
    day(s) are missing — go back to Import & Parse for those days first.
 
-### Emailing a report manually
+#### Emailing a report manually
 
 Check **Email report** before clicking **Export**. A compose dialog pops up (prefilled
 recipients from `REPORT_EMAIL_TO`, editable body) — confirming it sends the exported
 file as an attachment via the local, signed-in Outlook app once export finishes.
 Uncheck the box to just export without emailing.
 
-### Custom SQL (optional, advanced)
+#### Custom SQL (optional, advanced)
 
 Turn on **Custom SQL** in the Report panel to edit the underlying query directly. It
 loads the built-in template on first use. Only a single `SELECT`/`WITH` statement is
 allowed — file-access functions and any DDL/DML are rejected.
 
-### Parser tab
+### 3DS Log Parser
 
-A standalone utility unrelated to ACS log parsing: paste a list of numbers to format
+Same Import & Parse / Report workflow as the ACS Log Parser above, but for 3DS Server
+transaction logs (separate storage: `data/logs_3ds/`, `data/csv_3ds/`,
+`data/csv_reports_final_3ds/`).
+
+#### Import & Parse
+
+1. Pick a **From**/**To** date range and click **Download from Elastic**. Each day is
+   saved to `data/logs_3ds/{date}/elastic.log` and parsed automatically into
+   `data/csv_3ds/{date}.csv`; the sidebar shows per-day downloaded/parsed status and
+   row counts.
+2. Click **Parse** (or **Re-parse**) on a day's card to re-run parsing without
+   re-downloading.
+
+#### Raw Log
+
+Select a single downloaded day in the sidebar, then open the **Raw Log** tab to view
+its raw text.
+
+#### Report
+
+Works the same as the ACS Report tab (From/To, Transaction ID filter, Custom SQL,
+Native pivot, Run/Load more/Export) — the one difference is there's no **Email report**
+option yet. Each exported row covers one 3DS Server transaction
+(`threeDSServerTransID`) with its message timeline, final result
+(`general_success`/`txn_result`), and the decoded denial reason when there is one
+(`rreq_result_description`, e.g. `DENIED / CARD_AUTH_FAILED`). The `Summary` sheet is
+counts/% by `txn_result`.
+
+### Parser
+
+A standalone utility unrelated to either log parser: paste a list of numbers to format
 them (plain or SQL-quoted) and flag duplicates.
 
 ## 4. Running the daily report without the UI

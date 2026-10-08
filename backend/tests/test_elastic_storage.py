@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.services import log_storage
+from app.acs.services import log_storage
 
 ELASTIC_LINE = (
     "2026-06-23 00:00:01.783 INFO [acss202]  [qtp-1] "

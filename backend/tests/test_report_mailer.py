@@ -2,8 +2,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.services import report_mailer
-from app.services.outlook_sender import outlook_available
+from app.acs.services import report_mailer
+from app.acs.services.outlook_sender import outlook_available
 
 
 class ReportMailerTest(unittest.TestCase):

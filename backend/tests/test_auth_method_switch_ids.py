@@ -1,6 +1,6 @@
 import unittest
 
-from app.parsers.acs_log_parser import parse_log_content
+from app.acs.parsers.acs_log_parser import parse_log_content
 
 THREE_DS_TXN_ID = "027b8f6f-819f-482d-a552-1e0165e593d1"
 ACS_TXN_ID = "8ffa6fd0-2d70-416f-9d05-c30af6b53196"

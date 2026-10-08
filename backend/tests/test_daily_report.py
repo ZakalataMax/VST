@@ -8,11 +8,11 @@ import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from app.jobs.daily_report import rolling_window, run_daily_report
-from app.parsers.models import MessageRow
-from app.services import elastic_logs
-from app.services.csv_storage import save_daily_csvs
-from app.services.elastic_logs import ElasticRequestError
+from app.acs.jobs.daily_report import rolling_window, run_daily_report
+from app.acs.parsers.models import MessageRow
+from app.common import elastic_logs
+from app.acs.services.csv_storage import save_daily_csvs
+from app.common.elastic_logs import ElasticRequestError
 
 _RANGE_RE = re.compile(r">= '([^']+)' AND timestamp < '([^']+)'")
 

@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.parsers.models import MessageRow
-from app.services import file_report
-from app.services.csv_storage import resolve_csv_paths_for_dates, save_daily_csvs, CSV_TO_DB
+from app.acs.parsers.models import MessageRow
+from app.acs.services import file_report
+from app.acs.services.csv_storage import resolve_csv_paths_for_dates, save_daily_csvs, CSV_TO_DB
 
 
 def _areq(txn: str, when: str, *, acct: str = "4111111111111111") -> MessageRow:
@@ -117,7 +117,7 @@ class FileReportTest(unittest.TestCase):
         self.assertEqual(row["card_scheme"], "Visa")
 
     def test_report_fills_browser_fields_from_user_agent_without_stored_columns(self) -> None:
-        from app.parsers.csv_writer import csv_dict_writer
+        from app.acs.parsers.csv_writer import csv_dict_writer
 
         csv_dir = Path(os.environ["CSV_STORAGE_DIR"])
         csv_dir.mkdir(parents=True, exist_ok=True)
@@ -456,8 +456,8 @@ class FileReportTest(unittest.TestCase):
                 _areq("T2", "2026-06-20 11:00:00.000"),
             ]
         )
-        with patch("app.services.excel_pivot.native_pivot_available", return_value=True), patch(
-            "app.services.excel_pivot.add_native_pivot"
+        with patch("app.common.excel_pivot.native_pivot_available", return_value=True), patch(
+            "app.common.excel_pivot.add_native_pivot"
         ) as mock_add_native_pivot:
             export = file_report.export_report_xlsx(
                 mode="date",
@@ -473,7 +473,7 @@ class FileReportTest(unittest.TestCase):
         from unittest.mock import patch
 
         save_daily_csvs([_areq("T1", "2026-06-20 10:00:00.000")])
-        with patch("app.services.excel_pivot.native_pivot_available", return_value=False):
+        with patch("app.common.excel_pivot.native_pivot_available", return_value=False):
             export = file_report.export_report_xlsx(
                 mode="date",
                 date_from="2026-06-20 00:00:00",

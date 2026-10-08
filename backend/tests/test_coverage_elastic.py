@@ -1,6 +1,6 @@
 import unittest
 
-from desktop.coverage_utils import (
+from desktop.tools.acs.coverage_utils import (
     STATUS_MISSING,
     STATUS_PARSED,
     STATUS_PARTIAL,

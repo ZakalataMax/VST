@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.device_detection import parse_browser_device
+from app.common.device_detection import parse_browser_device
 
 
 class DeviceDetectionTest(unittest.TestCase):

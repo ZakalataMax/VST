@@ -1,7 +1,9 @@
 # VST Work Tools
 
-Desktop app (PySide6) for downloading ACS logs from Elastic, parsing them into daily
-CSV tables, building DuckDB pivot reports, and exporting them to Excel.
+Desktop app (PySide6) with three tools: **ACS Log Parser** (downloads ACS logs from
+Elastic, parses them into daily CSV tables, builds DuckDB pivot reports, exports to
+Excel), **3DS Log Parser** (same download/parse/report flow for 3DS Server logs), and
+**Parser** (a standalone number formatting/dedup utility).
 
 ## Workflow: dev machine -> VDI
 
@@ -36,15 +38,17 @@ Required:
 - `ELASTIC_PASS` — Elastic password used to download logs.
 
 Common optional settings: `ELASTIC_USER`, `ELASTIC_URL`, `ELASTIC_INDEX`,
-`ELASTIC_HOSTS`, `ELASTIC_VERIFY_TLS`, `ELASTIC_CA_BUNDLE`, `LOG_STORAGE_DIR`,
-`CSV_STORAGE_DIR`, `REPORT_OUTPUT_DIR`. See `.env.example` for the full list.
+`ELASTIC_HOSTS`, `ELASTIC_3DS_APP_NAME`, `ELASTIC_3DS_HOSTS`, `ELASTIC_VERIFY_TLS`,
+`ELASTIC_CA_BUNDLE`, `LOG_STORAGE_DIR`, `CSV_STORAGE_DIR`, `REPORT_OUTPUT_DIR`,
+`THREEDS_LOG_STORAGE_DIR`, `THREEDS_CSV_STORAGE_DIR`, `THREEDS_REPORT_OUTPUT_DIR`.
+See `.env.example` for the full list.
 
 Storing `.env` next to the exe on a trusted single-user VDI is an intentional choice for
 this internal tool.
 
 ## Daily use (VDI)
 
-1. Run `VST.exe` from the shortcut. The app opens on the **Logs** tab.
+1. Run `VST.exe` from the shortcut. The app opens on the **ACS Log Parser** tab.
 2. **Import & Parse:** pick a date range and download logs from Elastic. Downloaded days
    are parsed automatically. Re-downloading a day refreshes its parsed CSV automatically.
 3. **Report:** selecting days fills the report From/To range. **Run** builds the pivot
@@ -97,12 +101,7 @@ cd backend
 python -m unittest discover -s tests
 ```
 
-## Parser tab
-
-Auxiliary utility: number formatting (plain or quoted for SQL) and duplicate checking on
-pasted lists. Not part of the main import/parse/report flow.
-
-## Logs tab
+## ACS Log Parser tab
 
 1. **Import & Parse** — download a date range from Elastic into `data/logs/`, then parse
    into `data/csv/`. Already-complete past days are skipped; partial/current days are
@@ -125,9 +124,33 @@ Enable **Custom SQL** to edit the query. On first enable, the template from
 Custom SQL is restricted to a single `SELECT`/`WITH` statement. File-access functions
 (`read_csv`, `read_parquet`, `glob`, ...) and any DDL/DML are rejected.
 
+## 3DS Log Parser tab
+
+Mirrors the ACS Log Parser's **Import & Parse** / **Report** flow for 3DS Server
+transactions (keyed by `threeDSServerTransID`, message types AReq/ARes/CReq/CRes/
+RReq/RRes/PReq/PRes/Erro), plus a **Raw Log** sub-tab:
+
+1. **Import & Parse** — download a date range from Elastic (`ELASTIC_3DS_APP_NAME`,
+   default `solar-3ds-server`; `ELASTIC_3DS_HOSTS`, default `3dss201,3dss202`) into
+   `data/logs_3ds/{date}/elastic.log`, then parse into `data/csv_3ds/{date}.csv`. The
+   sidebar shows per-day downloaded/parsed status and row counts.
+2. **Raw Log** — view the selected day's raw downloaded log text.
+3. **Report** — same UX as the ACS Report tab (date range, Transaction ID filter,
+   Custom SQL editor, Native pivot, Load more pagination, Export to
+   `data/csv_reports_final_3ds/`) except there's no email-sending option yet. The
+   `Data` sheet has one row per transaction with its full message timeline, final
+   result (`general_success`/`txn_result`), and error/description fields
+   (`rreq_result_description` decodes the ACS's human-readable denial reason, e.g.
+   `DENIED / CARD_AUTH_FAILED`); the `Summary` sheet is counts/% by `txn_result`.
+
+## Parser tab
+
+Auxiliary utility: number formatting (plain or quoted for SQL) and duplicate checking on
+pasted lists. Not part of either log-parsing tool.
+
 ## Automation (scheduled daily report)
 
-`app/jobs/daily_report.py` runs the rolling flow unattended: download+parse the last
+`app/acs/jobs/daily_report.py` runs the rolling flow unattended: download+parse the last
 `DAILY_JOB_DOWNLOAD_DAYS` days (default **2**), build a report over the last
 `DAILY_JOB_REPORT_DAYS` days (default **10**), export it, and email it via the local,
 already-signed-in Outlook desktop app (COM automation). Older days in the report window

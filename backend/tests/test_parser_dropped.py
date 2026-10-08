@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from app.parsers.acs_log_parser import (
+from app.acs.parsers.acs_log_parser import (
     ParseDiagnostics,
     max_dropped_lines,
     parse_log_content,

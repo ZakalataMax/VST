@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.card_champions import mask_card_number
+from app.acs.services.card_champions import mask_card_number
 
 
 class CardMaskTest(unittest.TestCase):

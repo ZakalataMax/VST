@@ -4,9 +4,10 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QMainWindow, QTabWidget, QVBoxLayout, QWidget
 
-from desktop.tabs.logs_tab import LogsTab
-from desktop.tabs.parser_tab import ParserTab
 from desktop.theme import apply_theme
+from desktop.tools.acs.acs_tab import AcsTab
+from desktop.tools.parser.parser_tab import ParserTab
+from desktop.tools.threeds.threeds_tab import ThreeDsTab
 
 
 class MainWindow(QMainWindow):
@@ -30,7 +31,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(header)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(LogsTab(), "Logs")
+        self.tabs.addTab(AcsTab(), "ACS Log Parser")
+        self.tabs.addTab(ThreeDsTab(), "3DS Log Parser")
         self.tabs.addTab(ParserTab(), "Parser")
         self.tabs.setCurrentIndex(0)
         layout.addWidget(self.tabs, stretch=1)

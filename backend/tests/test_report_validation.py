@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.report import validate_custom_sql
+from app.acs.services.report import validate_custom_sql
 
 
 class CustomSqlValidationTest(unittest.TestCase):

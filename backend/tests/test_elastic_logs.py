@@ -11,8 +11,9 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from app.services import elastic_logs
-from app.services.elastic_logs import (
+from app.acs.elastic_config import ACS_SOURCE
+from app.common import elastic_logs
+from app.common.elastic_logs import (
     ElasticConfigError,
     ElasticRequestError,
     download_day,
@@ -76,17 +77,17 @@ class ElasticDownloadTest(unittest.TestCase):
 
     def test_full_day_collects_all_chunks(self) -> None:
         executor = _make_executor()
-        result = download_day("2026-06-23", now=self._future_now(), executor=executor)
+        result = download_day("2026-06-23", ACS_SOURCE, now=self._future_now(), executor=executor)
         self.assertEqual(result.row_count, 48)
         self.assertFalse(result.partial)
         first_line = result.content.splitlines()[0]
         self.assertTrue(first_line.startswith("2026-06-23 00:00:00.000 INFO [acss201]"))
 
     def test_content_is_sorted_and_parser_compatible(self) -> None:
-        from app.parsers.acs_log_parser import parse_log_content
+        from app.acs.parsers.acs_log_parser import parse_log_content
 
         executor = _make_executor(rows_per_chunk=2)
-        result = download_day("2026-06-23", now=self._future_now(), executor=executor)
+        result = download_day("2026-06-23", ACS_SOURCE, now=self._future_now(), executor=executor)
         lines = result.content.splitlines()
         self.assertEqual(lines, sorted(lines))
         rows = parse_log_content("solar-acs.2026-06-23.log", result.content)
@@ -95,7 +96,7 @@ class ElasticDownloadTest(unittest.TestCase):
     def test_split_on_retryable_error(self) -> None:
         calls: list[tuple[str, str]] = []
         executor = _make_executor(fail_above_minutes=20, calls=calls)
-        result = download_day("2026-06-23", now=self._future_now(), executor=executor)
+        result = download_day("2026-06-23", ACS_SOURCE, now=self._future_now(), executor=executor)
         self.assertEqual(result.row_count, 96)
         self.assertTrue(any(call[0].endswith(":15:00.000+03:00") for call in calls))
 
@@ -104,14 +105,14 @@ class ElasticDownloadTest(unittest.TestCase):
             raise ElasticRequestError("HTTP 401", retryable=False)
 
         with self.assertRaises(ElasticRequestError):
-            download_day("2026-06-23", now=self._future_now(), executor=executor)
+            download_day("2026-06-23", ACS_SOURCE, now=self._future_now(), executor=executor)
 
     def test_today_is_capped_to_now(self) -> None:
         tz = elastic_logs._tz()
         today = datetime.now(tz).date()
         now = datetime.combine(today, datetime.min.time(), tzinfo=tz) + timedelta(hours=2)
         executor = _make_executor()
-        result = download_day(today.isoformat(), now=now, executor=executor)
+        result = download_day(today.isoformat(), ACS_SOURCE, now=now, executor=executor)
         self.assertTrue(result.partial)
         self.assertEqual(result.row_count, 4)
 
@@ -166,6 +167,7 @@ class ElasticDownloadTest(unittest.TestCase):
         with self.assertRaises(elastic_logs.ElasticDownloadCancelled):
             download_day(
                 "2026-06-23",
+                ACS_SOURCE,
                 now=self._future_now(),
                 executor=executor,
                 progress=progress,
@@ -392,7 +394,7 @@ class ElasticTruncationTest(unittest.TestCase):
         elastic_logs.QUERY_LIMIT = 5
         log_date, now = self._partial_now(4)
         executor = _count_executor(big_count=5, small_count=2)
-        result = download_day(log_date, now=now, executor=executor)
+        result = download_day(log_date, ACS_SOURCE, now=now, executor=executor)
         self.assertEqual(result.row_count, 8)
 
     def test_min_chunk_at_limit_fails_day(self) -> None:
@@ -400,7 +402,7 @@ class ElasticTruncationTest(unittest.TestCase):
         log_date, now = self._partial_now(4)
         executor = _count_executor(big_count=5, small_count=5)
         with self.assertRaises(elastic_logs.ElasticError):
-            download_day(log_date, now=now, executor=executor)
+            download_day(log_date, ACS_SOURCE, now=now, executor=executor)
 
     def test_invalid_timestamps_counted(self) -> None:
         log_date, now = self._partial_now(2)
@@ -416,7 +418,7 @@ class ElasticTruncationTest(unittest.TestCase):
                 ",acss201,solar-acs,INFO, [t] l - broken\n"
             )
 
-        result = download_day(log_date, now=now, executor=executor)
+        result = download_day(log_date, ACS_SOURCE, now=now, executor=executor)
         self.assertEqual(result.row_count, 1)
         self.assertEqual(result.dropped_count, 1)
 
@@ -431,7 +433,7 @@ class ElasticTruncationTest(unittest.TestCase):
             )
 
         with self.assertRaises(elastic_logs.ElasticError):
-            download_day(log_date, now=now, executor=executor)
+            download_day(log_date, ACS_SOURCE, now=now, executor=executor)
 
 
 if __name__ == "__main__":
