@@ -74,6 +74,28 @@ def _method_expired(txn: str, when: str) -> ThreeDsMessageRow:
     )
 
 
+def _erro(txn: str, when: str) -> ThreeDsMessageRow:
+    # The raw Erro JSON often carries no error fields of its own - see _erro_detail.
+    return ThreeDsMessageRow(
+        log_file="elastic.log",
+        message_datetime=when,
+        message_type="Erro",
+        three_ds_server_trans_id=txn,
+    )
+
+
+def _erro_detail(txn: str, when: str, *, code: str, detail: str, description: str) -> ThreeDsMessageRow:
+    return ThreeDsMessageRow(
+        log_file="elastic.log",
+        message_datetime=when,
+        message_type="ErroDetail",
+        three_ds_server_trans_id=txn,
+        error_code=code,
+        error_detail=detail,
+        error_description=description,
+    )
+
+
 class ThreeDsFileReportTest(unittest.TestCase):
     def test_pivot_row_fields_order(self) -> None:
         self.assertEqual(
@@ -205,6 +227,36 @@ class ThreeDsFileReportTest(unittest.TestCase):
         )
         self.assertEqual(result.rows[0]["method_expired"], "YES")
         self.assertIn("3DSMethodExpired", result.rows[0]["txn_timeline"])
+
+    def test_erro_bucket_pulls_decoded_reason_from_erro_detail(self) -> None:
+        # Regression: the raw "Erro" JSON often has no errorCode/errorDescription of its
+        # own - those live only on the synthetic ErroDetail row (decoded from the
+        # "Received Error message: ..." text line). Both must surface in the report.
+        save_daily_csvs(
+            [
+                _areq("T1", "2026-06-20 10:00:00.000"),
+                _erro("T1", "2026-06-20 10:00:01.000"),
+                _erro_detail(
+                    "T1",
+                    "2026-06-20 10:00:01.000",
+                    code="ERR_203_MALFORMED_ELEMENTS",
+                    detail="threeDSRequestorURL",
+                    description="Format of one or more elements is invalid.",
+                ),
+                _method_expired("T1", "2026-06-20 10:00:30.000"),
+            ]
+        )
+        result = file_report.run_report_query(
+            mode="date",
+            date_from="2026-06-20 00:00:00",
+            date_to="2026-06-20 23:59:59",
+        )
+        row = result.rows[0]
+        self.assertEqual(row["txn_result"], "Erro")
+        self.assertEqual(row["errorcode"], "ERR_203_MALFORMED_ELEMENTS")
+        self.assertEqual(row["errordescription"], "Format of one or more elements is invalid.")
+        self.assertIn("Erro", row["txn_timeline"])
+        self.assertIn("ErroDetail(ERR_203_MALFORMED_ELEMENTS/threeDSRequestorURL)", row["txn_timeline"])
 
     def test_st_louis_date_field_is_date_only_and_can_roll_back_a_day(self) -> None:
         os.environ["ELASTIC_TIME_ZONE"] = "Europe/Athens"

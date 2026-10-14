@@ -17,3 +17,14 @@ RECEIVED_RREQ_STATUS_RE = re.compile(
 METHOD_EXPIRED_RE = re.compile(
     r"slr\.ipa\.tdss\.log\.3ds_method_expired: \[([0-9a-f-]+)\]"
 )
+
+# "Received Error message: txn id (acs=[<id>|null], ds=[<id>|null], server=[<id>|null],
+# sdk=[<id>|null]), code=[<CODE>], details=[<FIELD>], description=[<TEXT>]."
+# The raw "Incoming message: [...Erro...]" JSON often carries only messageType + ids,
+# with no errorCode/errorDescription of its own - the actual decoded reason lives only
+# in this separate plain-text line, logged right after.
+RECEIVED_ERROR_MESSAGE_RE = re.compile(
+    r"Received Error message: txn id \(acs=\[([^\]]*)\], ds=\[([^\]]*)\], "
+    r"server=\[([^\]]*)\], sdk=\[([^\]]*)\]\), "
+    r"code=\[([^\]]*)\], details=\[([^\]]*)\], description=\[([^\]]*)\]"
+)

@@ -36,6 +36,17 @@ METHOD_EXPIRED_LINE = (
     f'{PREFIX}9.520 INFO [3dss202]  [w] c.s.s.i.t.s.s.ThreeDsServerCoreComponentImpl - '
     "slr.ipa.tdss.log.3ds_method_expired: [abc123]"
 )
+ERRO_LINE = (
+    f'{PREFIX}6.885 INFO [3dss201]  [w] c.s.s.i.t.s.s.ThreeDsServerCoreComponentImpl - '
+    'Incoming message: [{"messageType":"Erro","messageVersion":"2.2.0",'
+    '"dsTransID":"ds1","threeDSServerTransID":"abc123"}].'
+)
+RECEIVED_ERROR_LINE = (
+    f'{PREFIX}6.885 INFO [3dss201]  [w] c.s.s.i.t.s.s.ThreeDsServerCoreComponentImpl - '
+    "Received Error message: txn id (acs=[null], ds=[ds1], server=[abc123], sdk=[null]), "
+    "code=[ERR_203_MALFORMED_ELEMENTS], details=[threeDSRequestorURL], "
+    "description=[Format of one or more elements is invalid according to the specification]."
+)
 NOISE_LINE = (
     f'{PREFIX}0.034 INFO [3dss201]  [w] c.s.s.i.n.r.r.s.AppNodesRuntimeRegistryImpl - '
     "Polling known nodes process has started."
@@ -95,6 +106,24 @@ class ThreeDsParserTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].message_type, "MethodExpired")
         self.assertEqual(rows[0].three_ds_server_trans_id, "abc123")
+
+    def test_erro_json_has_no_error_fields_of_its_own(self) -> None:
+        rows = parse_log_content("t.log", ERRO_LINE)
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row.message_type, "Erro")
+        self.assertEqual(row.three_ds_server_trans_id, "abc123")
+        self.assertEqual(row.error_code, "")
+
+    def test_received_error_message_becomes_synthetic_row(self) -> None:
+        rows = parse_log_content("t.log", RECEIVED_ERROR_LINE)
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row.message_type, "ErroDetail")
+        self.assertEqual(row.three_ds_server_trans_id, "abc123")
+        self.assertEqual(row.error_code, "ERR_203_MALFORMED_ELEMENTS")
+        self.assertEqual(row.error_detail, "threeDSRequestorURL")
+        self.assertIn("invalid according to the specification", row.error_description)
 
     def test_noise_line_produces_no_rows(self) -> None:
         rows = parse_log_content("t.log", NOISE_LINE)

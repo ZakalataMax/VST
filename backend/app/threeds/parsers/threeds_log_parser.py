@@ -10,6 +10,7 @@ from app.threeds.parsers.patterns import (
     INCOMING_MESSAGE_PAYLOAD_RE,
     METHOD_EXPIRED_RE,
     OUTGOING_MESSAGE_PAYLOAD_RE,
+    RECEIVED_ERROR_MESSAGE_RE,
     RECEIVED_RREQ_STATUS_RE,
     TIMESTAMP_RE,
 )
@@ -101,6 +102,22 @@ def _parse_line(
         row = _base_row(log_file, timestamp, source_index)
         row.message_type = "MethodExpired"
         row.three_ds_server_trans_id = method_expired_match.group(1)
+        return [row]
+
+    error_message_match = RECEIVED_ERROR_MESSAGE_RE.search(line)
+    if error_message_match:
+        acs_id, _ds_id, server_id, _sdk_id = error_message_match.group(1, 2, 3, 4)
+        code, detail, description = error_message_match.group(5, 6, 7)
+        if not server_id or server_id == "null":
+            return []
+        row = _base_row(log_file, timestamp, source_index)
+        row.message_type = "ErroDetail"
+        row.three_ds_server_trans_id = server_id
+        if acs_id and acs_id != "null":
+            row.acs_trans_id = acs_id
+        row.error_code = code
+        row.error_detail = detail
+        row.error_description = description
         return [row]
 
     return []

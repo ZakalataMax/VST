@@ -73,13 +73,17 @@ method_expired AS (
     WHERE ds.messagetype = 'MethodExpired'
 ),
 erro AS (
+    -- The raw "Erro" JSON message often carries only ids, no error details of its own -
+    -- the decoded code/detail/description live on the separate synthetic "ErroDetail"
+    -- row (parsed from the "Received Error message: ..." text line). Pull from both.
     SELECT
         ds.threedsservertransid,
-        (array_agg(ds.errorcode ORDER BY ds.messagedatetime DESC))[1] AS errorcode,
-        (array_agg(ds.errordescription ORDER BY ds.messagedatetime DESC))[1] AS errordescription
+        max(NULLIF(ds.errorcode, '')) AS errorcode,
+        max(NULLIF(ds.errordetail, '')) AS errordetail,
+        max(NULLIF(ds.errordescription, '')) AS errordescription
     FROM cust_3ds_server_mess ds
     INNER JOIN report_txn t ON ds.threedsservertransid = t.threedsservertransid
-    WHERE ds.messagetype = 'Erro'
+    WHERE ds.messagetype IN ('Erro', 'ErroDetail')
     GROUP BY ds.threedsservertransid
 ),
 event_token AS (
@@ -90,6 +94,7 @@ event_token AS (
             WHEN 'AReq' THEN 10
             WHEN 'ARes' THEN 20
             WHEN 'Erro' THEN 25
+            WHEN 'ErroDetail' THEN 27
             WHEN 'CReq' THEN 30
             WHEN 'CRes' THEN 40
             WHEN 'RReq' THEN 50
@@ -114,8 +119,11 @@ event_token AS (
             WHEN e.messagetype = 'MethodExpired' THEN '3DSMethodExpired'
             WHEN e.messagetype = 'PReq' THEN 'PReq'
             WHEN e.messagetype = 'PRes' THEN 'PRes'
-            WHEN e.messagetype = 'Erro' AND e.errorcode IS NOT NULL
-            THEN 'Erro(' || e.errorcode || ')'
+            WHEN e.messagetype = 'Erro'
+            THEN 'Erro' || CASE WHEN COALESCE(e.errorcode, '') != '' THEN '(' || e.errorcode || ')' ELSE '' END
+            WHEN e.messagetype = 'ErroDetail'
+            THEN 'ErroDetail(' || COALESCE(NULLIF(e.errorcode, ''), 'NULL')
+                || '/' || COALESCE(NULLIF(e.errordetail, ''), 'NULL') || ')'
         END AS token
     FROM cust_3ds_server_mess e
     INNER JOIN report_txn t ON e.threedsservertransid = t.threedsservertransid

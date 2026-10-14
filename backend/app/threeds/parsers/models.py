@@ -75,6 +75,7 @@ MESSAGE_SORT_ORDER = {
     "AReq": 10,
     "ARes": 20,
     "Erro": 25,
+    "ErroDetail": 27,
     "CReq": 30,
     "CRes": 40,
     "RReq": 50,
